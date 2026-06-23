@@ -1,0 +1,48 @@
+mc:
+  version: 1.20.1
+  port: 25565
+  max_players: 20
+  java_path: ''
+  jvm_args: -Xmx4G -Xms2G
+  server_jar: ''
+  auto_restart: true
+  restart_max_retries: 3
+web:
+  admin_port: 8443
+  session_timeout: 3600
+  csrf_enabled: true
+  rate_limit: 10/minute
+  ssl_enabled: true
+  ssl_cert: config/certs/cert.pem
+  ssl_key: config/certs/key.pem
+admins:
+- username: admin
+  password_hash: $2b$12$GK19OcLaWy3fkOrX2TVQa.VUYSiqOTdmqu4NnjGQYOrx42C4n61CW
+tunnel:
+  server_addr: frp-way.com
+  server_port: 8088
+  token: ''
+  protocol: tcp
+  enabled_ports:
+  - mc_server
+  - mc_admin
+  mapping:
+    mc_server:
+      local_port: 25565
+      remote_port: 18382
+      protocol: tcp
+      auth_pass: ''
+    mc_admin:
+      local_port: 8443
+      remote_port: 26909
+      protocol: tcp
+      auth_pass: '123'
+  user: vyaogqjrr72yky0wbd8f8mpg2f3v7eni
+  sakura_mode: true
+  login_fail_exit: false
+world:
+  level_name: worlds/world
+  gamemode: creative
+  difficulty: easy
+  seed: ''
+  motd: A Minecraft Server

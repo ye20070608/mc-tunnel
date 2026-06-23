@@ -1,0 +1,101 @@
+{
+  "server": {
+    "status": "running",
+    "version": "1.20.4",
+    "motd": "§a欢迎来到像素传奇服务器！§r\n§e生存 · 社区 · 冒险",
+    "uptime": "3天 7小时 42分钟",
+    "tps": 19.8,
+    "maxPlayers": 20,
+    "onlinePlayers": 12,
+    "port": 25565,
+    "javaVersion": "JDK 17.0.9",
+    "memory": { "used": "2.8G", "max": "4G", "percent": 70 },
+    "cpu": "23%",
+    "autoRestart": true
+  },
+  "players": [
+    { "name": "Steve", "ping": 24, "gamemode": "生存模式", "joined": "2小时前" },
+    { "name": "Alex", "ping": 18, "gamemode": "生存模式", "joined": "1小时前" },
+    { "name": "Notch", "ping": 45, "gamemode": "创造模式", "joined": "30分钟前" },
+    { "name": "Herobrine", "ping": 999, "gamemode": "旁观模式", "joined": "???" },
+    { "name": "CreeperKing", "ping": 32, "gamemode": "生存模式", "joined": "5小时前" },
+    { "name": "DiamondHunt", "ping": 15, "gamemode": "生存模式", "joined": "3小时前" },
+    { "name": "RedstonePro", "ping": 28, "gamemode": "生存模式", "joined": "1天前" },
+    { "name": "BuilderMax", "ping": 22, "gamemode": "创造模式", "joined": "6小时前" }
+  ],
+  "whitelist": [
+    { "name": "Steve", "added": "2026-06-15", "by": "admin" },
+    { "name": "Alex", "added": "2026-06-15", "by": "admin" },
+    { "name": "Notch", "added": "2026-06-18", "by": "admin" },
+    { "name": "CreeperKing", "added": "2026-06-19", "by": "op" },
+    { "name": "DiamondHunt", "added": "2026-06-20", "by": "admin" }
+  ],
+  "logs": [
+    { "time": "14:35:22", "level": "info", "message": "玩家 Steve 加入了游戏" },
+    { "time": "14:33:10", "level": "info", "message": "玩家 Alex 在坐标 (-128, 64, 256) 获得了成就 [钻石！]" },
+    { "time": "14:30:05", "level": "warn", "message": "玩家 Herobrine 的延迟过高 (999ms)" },
+    { "time": "14:28:47", "level": "info", "message": "自动保存完成 (耗时 1.2s)" },
+    { "time": "14:25:00", "level": "info", "message": "玩家 RedstonePro 加入了游戏" },
+    { "time": "14:20:33", "level": "error", "message": "无法解析玩家 CreeperKing 的聊天消息：无效字符" },
+    { "time": "14:18:15", "level": "info", "message": "玩家 BuilderMax 使用了命令 /home" },
+    { "time": "14:15:00", "level": "info", "message": "备份完成：world_backup_20260622.zip (1.2GB)" }
+  ],
+  "operationLogs": [
+    { "time": "2026-06-22 14:30", "operator": "admin", "ip": "192.168.1.100", "action": "重启服务器" },
+    { "time": "2026-06-22 12:15", "operator": "admin", "ip": "192.168.1.100", "action": "添加白名单：DiamondHunt" },
+    { "time": "2026-06-22 10:00", "operator": "op", "ip": "10.0.0.55", "action": "踢出玩家：Griefer123" },
+    { "time": "2026-06-21 22:45", "operator": "admin", "ip": "192.168.1.100", "action": "修改穿透端口映射" },
+    { "time": "2026-06-21 18:30", "operator": "admin", "ip": "192.168.1.100", "action": "修改 JVM 启动参数" }
+  ],
+  "tunnel": {
+    "status": "connected",
+    "server": "frp.example.com:7000",
+    "uptime": "3天 7小时 30分钟",
+    "activeTunnels": "3",
+    "mappings": [
+      { "name": "MC 游戏端口", "localPort": 25565, "remotePort": 25565, "protocol": "TCP", "status": "active" },
+      { "name": "服务器介绍页", "localPort": 8080, "remotePort": 8080, "protocol": "TCP", "status": "active" },
+      { "name": "管理后台", "localPort": 8443, "remotePort": 8443, "protocol": "TCP", "status": "active" }
+    ]
+  },
+  "config": {
+    "mcPort": 25565,
+    "introPort": 8080,
+    "adminPort": 8443,
+    "maxPlayers": 20,
+    "jvmArgs": "-Xmx4G -Xms2G",
+    "autoRestart": true,
+    "restartMaxRetries": 3,
+    "sessionTimeout": 3600,
+    "csrfEnabled": true
+  },
+  "intro": {
+    "serverName": "像素传奇",
+    "slogan": "一个温馨的 Minecraft 生存社区",
+    "description": "欢迎来到像素传奇！我们是一个注重社区、合作与创造的 Minecraft 生存服务器。无论你是建筑大师、红石工程师还是休闲探索者，这里都有你的一席之地。",
+    "rules": [
+      "禁止作弊、使用外挂或利用漏洞",
+      "尊重每一位玩家，禁止人身攻击",
+      "未经允许不要破坏他人建筑",
+      "禁止在公共频道刷屏或发广告",
+      "使用农场时请遵守公共规则"
+    ],
+    "features": [
+      { "name": "纯生存体验", "desc": "无飞行、无传送，原汁原味的生存挑战" },
+      { "name": "社区经济", "desc": "玩家自建商店，钻石为通用货币" },
+      { "name": "定期活动", "desc": "每周建筑大赛、每月 Boss 挑战" },
+      { "name": "领地保护", "desc": "GriefPrevention 插件保护你的家园" }
+    ],
+    "version": "1.20.4",
+    "onlineMode": true
+  },
+  "setup": {
+    "steps": [
+      { "id": 1, "title": "欢迎", "desc": "欢迎使用 MC 服务器穿透控制面板" },
+      { "id": 2, "title": "MC 配置", "desc": "设置 Minecraft 服务端参数" },
+      { "id": 3, "title": "穿透配置", "desc": "配置内网穿透和端口映射" },
+      { "id": 4, "title": "管理员", "desc": "创建管理员账号" },
+      { "id": 5, "title": "完成", "desc": "确认并启动服务" }
+    ]
+  }
+}

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="">
+<title>{{data.intro.serverName}} — 管理后台登录</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{url_for('static', filename='style.css')}}">
+</head>
+<body>
+
+<div class="login-screen">
+  <div class="login-box card">
+    <div class="login-title">
+      ⛏ {{data.intro.serverName}}<br>
+      <span>MC 服务器管理面板</span>
+    </div>
+
+    <!-- Error message placeholder -->
+    <div class="login-error" id="login-error"></div>
+
+    <form id="login-form">
+      <div class="field">
+        <label for="username">管理员账号</label>
+        <input class="input" type="text" id="username" name="username"
+               placeholder="输入用户名" value="admin" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">密码</label>
+        <input class="input" type="password" id="password" name="password"
+               placeholder="输入密码" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit" id="login-btn" style="margin-top:8px;">
+        登 录
+      </button>
+    </form>
+
+    <p class="login-hint">
+      演示账号: <code>admin</code> / <code>admin</code>
+    </p>
+  </div>
+</div>
+
+<script src="{{url_for('static', filename='app.js')}}"></script>
+</body>
+</html>

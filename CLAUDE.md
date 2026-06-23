@@ -1,0 +1,221 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+## 文档索引
+
+> CLAUDE.md 是入口，详细内容在各专题文件中。
+
+| 文档 | 用途 | 何时查阅 |
+|------|------|---------|
+| `Project.md` | 系统设计（架构、安全、API、配置、风险） | 了解系统全貌、做架构决策 |
+| `Task.md` | 7阶段任务分解、依赖关系、工时 | 规划开发顺序、评估进度 |
+| `coding.md` | 编码规范（Python/前端/安全/Git） | 编写任何代码前 |
+| `README.md` | 项目简介、快速开始 | 项目概览 |
+| `docs/DECISIONS.md` | 技术选型决策记录（T1.1 产出） | 了解技术栈选择原因 |
+| `docs/user-guide.md` | 用户操作手册 | 用户指导 |
+| `CHANGELOG.md` | 版本变更记录 | 发布时更新 |
+
+---
+
+## 项目身份
+
+一体化 **MC 服务器穿透控制软件** — 本地运行，集 PaperMC 管理 + frp 内网穿透 + Web 介绍页 + 管理后台于一体。目标用户是缺乏公网 IP 的 MC 服主。
+
+---
+
+## 当前状态：阶段 1-5 完成，阶段 6 进行中（Bug 修复与功能增强）
+
+**36+ Python 源文件** 覆盖阶段 1-5 全部功能：
+
+| 阶段 | 状态 | 内容 |
+|------|------|------|
+| 阶段 1 | ✅ 完成 | 项目骨架、配置系统、日志系统、技术调研文档 |
+| 阶段 2 | ✅ 完成 | 进程管理器、MC 适配器、RCON 集成、白名单管理、本地 API |
+| 阶段 3 | ✅ 完成 | frp 配置生成器、frp 进程管理、TCP 代理层（协议嗅探）、UDP 预留、连接统计 |
+| 阶段 4 | ✅ 完成 | Flask 双端口 HTTP 服务器、状态 API、介绍页模板 |
+| 阶段 5 | ✅ 完成 | JWT 认证、CSRF 防护、管理后台全功能（服务控制/白名单/日志/穿透配置/审计） |
+| 阶段 6 | 🔧 进行中 | 整合测试、Bug 修复、功能增强 |
+| 阶段 7 | ○ 待完成 | 文档完善、打包发布、CI/CD |
+
+当前焦点：Bug 修复（隧道冲突、中文乱码、玩家管理增强）、文档更新。
+
+### 阶段 6 已修复
+
+| 问题 | 修复文件 | 说明 |
+|------|---------|------|
+| 中文控制台乱码 | `adapter.py:39-41` | JVM 加 `-Dsun.stdout.encoding=UTF-8` 等三个编码参数 |
+| RCON 日志刷屏 | `procman/manager.py:13-19` | `_is_internal_line()` 过滤 RCON 连接/断开噪音 |
+| 隧道状态误报 | `client.py:get_status()` | 用 `_connected_event` 区分连接中/已连接/断开 |
+| frpc 输出重复 | `client.py:116` | `stderr=subprocess.STDOUT` 合并管道，解决樱花 frpc 同时写 stdout+stderr |
+| frpc 重复启动 | `app.js:949` + `api/tunnel.py:48` | 前端 `_frpcActionLock` 互斥锁 + 后端去竞态 |
+| OP 管理 | `adapter.py:op_player/deop` + `api/mc.py:deop` | 绿色按钮支持设置/撤销管理员 |
+| 玩家详情 | `adapter.py:_enrich_player` | RCON 获取世界+坐标，控制台追踪在线时长 |
+| 樱花启动器冲突 | 文档警告 | `SakuraFrpService.exe` 与我们的 frpc 不能同时运行 |
+
+### ⚠️ 樱花穿透冲突警告
+
+樱花官方启动器（`SakuraFrpService.exe`）如果正在运行，会占用隧道导致我们的 frpc 报「已在线」。**二选一**——要么用官方启动器，要么用我们的管理面板，不能同时。切换前先 `taskkill /F /IM SakuraFrpService.exe`，等 3-5 分钟再启动。
+
+---
+
+## 技术栈（已决策）
+
+| 组件 | 技术 |
+|------|------|
+| 主语言 | Python 3.12 |
+| Web 框架 | Flask 3.x（应用工厂模式 + Blueprint） |
+| 前端 | Alpine.js + HTMX |
+| 日志 | Loguru |
+| 配置 | YAML（PyYAML） |
+| 认证 | JWT（PyJWT）+ BCrypt ≥ 12 |
+| MC 交互 | RCON（mcipc）+ Server List Ping（mcstatus） |
+| 穿透 | frp 子进程 |
+| 打包 | PyInstaller（--onefile） |
+| 测试 | pytest + pytest-cov |
+
+---
+
+## 系统架构
+
+```
+[公网] → frp穿透 → TCP代理层(协议嗅探) → 本地服务
+  ├─ 端口1: MC协议 (25565)   → 0xFE/VarInt识别 → PaperMC
+  ├─ 端口2: 介绍页 (8080)    → 内嵌HTTP → 公开API + HTML模板
+  └─ 端口3: 管理后台 (8443)  → JWT鉴权 + CSRF → 管理面板
+```
+
+核心模块（详细设计见 `Project.md` §3）：
+
+| 模块 | 职责 | 详细设计 |
+|------|------|---------|
+| 控制核心 | 子进程生命周期、配置热重载、日志聚合 | `Project.md` §3.1 |
+| TCP 代理层 | 协议嗅探（0xFE/VarInt → MC；ASCII → 拒绝/302），非 MC 流量拦截 | `Project.md` §3.4 |
+| 穿透客户端 | frp 子进程，自动重连，动态端口映射 | `Project.md` §3.2 |
+| Web 服务 | Flask 双端口 HTTP（8080 介绍页 + 8443 管理后台） | `Project.md` §3.3 |
+| 鉴权体系 | BCrypt 多用户 + JWT + CSRF + 速率限制 + 操作审计 | `Project.md` §6 |
+
+---
+
+## 开发工作流
+
+### 环境就绪
+
+```bash
+# 激活 Python 虚拟环境
+venv\Scripts\activate          # Windows
+source venv/bin/activate       # Linux/macOS
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 运行
+python main.py
+
+# 测试
+pytest tests/ --cov
+
+# 代码质量
+ruff format --check .          # 格式化检查
+ruff check .                   # Lint
+mypy core/ api/                # 类型检查（核心模块）
+```
+
+### 编码规范速查
+
+所有代码编写前参考 `coding.md`，要点：
+
+- **Python**：`ruff` 格式化 + lint；`mypy` 类型检查（核心模块必覆盖）；Flask 应用工厂模式 + Blueprint；`asyncio` 实现 TCP 代理
+- **前端**：Alpine.js + HTMX；轮询 10 秒间隔；CSRF Token 从 `<meta name="csrf-token">` 读取
+- **安全**：BCrypt cost ≥ 12；JWT 密钥 ≥ 256 bit；操作日志记录所有敏感操作；禁止日志泄露密码/Token；输入校验防 RCON 命令注入和目录穿越
+- **Git**：`[T1.3] feat(config): 描述`；`main` 可发布；`feature/stage-N` 分支开发
+
+### 配置
+
+`config.yaml` 五个顶层键：`mc` / `web` / `admins` / `tunnel` / `tunnel.enabled_ports`。详见 `Project.md` §5.1。关键点：
+- 启动前校验端口冲突 + Java 版本兼容性（JDK 17+）
+- 内部 API 仅监听 `127.0.0.1`，管理 API 全部经鉴权中间件
+- 支持配置热重载
+
+### API 约定
+
+路由格式：`/api/<资源>/<动作>`。详见 `Project.md` §5.2。
+- 管理 API 必须鉴权：页面请求（`Accept: text/html`）→ 302 重定向；API 请求（`Accept: application/json` 或 `/api/` 前缀）→ 401 JSON
+- 公开 API（`/api/public/status`）无需鉴权，只读
+
+### 项目目录结构
+
+> ✓ = 已实现，○ = 待开发
+
+```
+MC服务器/
+├── main.py                        # ✓ 入口引导（日志→配置→Java→JAR→EULA→就绪）
+├── requirements.txt               # ✓ 17 个 Python 依赖
+├── config/
+│   ├── __init__.py
+│   ├── loader.py                  # ✓ YAML 加载/校验/ConfigManager（含密码修改）
+│   └── defaults.yaml              # ✓ 默认配置模板
+├── logger/
+│   └── __init__.py                # ✓ Loguru 初始化（控制台+文件轮转+审计日志分流）
+├── core/
+│   ├── mcserver/
+│   │   ├── __init__.py
+│   │   ├── adapter.py             # ✓ PaperMC 适配器（启动/RCON/白名单/日志/玩家管理/OP/坐标）
+│   │   ├── status.py              # ✓ MC 状态采集（TPS/MOTD/在线人数/进程指标）
+│   │   ├── whitelist.py           # ✓ RCON 白名单管理（WhitelistManager）
+│   │   ├── worlds.py              # ✓ 世界管理（worlds/ 目录 + 三维度分组 + 迁移）
+│   │   ├── status.py              # ✓ MC 状态采集（TPS/MOTD/在线人数/进程指标）
+│   │   ├── whitelist.py           # ✓ RCON 白名单管理（WhitelistManager）
+│   │   ├── downloader.py          # ✓ PaperMC API 下载（含 SHA256 校验）
+│   │   ├── java.py                # ✓ Java 检测与版本校验（4 级查找策略）
+│   │   └── eula.py                # ✓ Mojang EULA 确认
+│   ├── procman/
+│   │   └── manager.py             # ✓ 通用进程管理器（启停/重启/崩溃自动重试/健康检查）
+│   ├── tunnel/
+│   │   ├── config.py              # ✓ frp 配置生成器（TOML 格式/热更新）
+│   │   └── client.py              # ✓ frp 子进程管理（启停/状态/连接事件，精简版无自动重启）
+│   ├── proxy/
+│   │   ├── tcp.py                 # ✓ TCP 代理层（VarInt 解码/协议嗅探/302 重定向）
+│   │   ├── udp.py                 # ○ UDP 预留骨架（二期 Bedrock 支持）
+│   │   └── stats.py               # ✓ 连接数和流量统计（线程安全）
+│   └── audit/
+│       └── logger.py              # ✓ 审计日志（JSON Lines/按操作者过滤/导出）
+├── api/
+│   ├── __init__.py
+│   ├── router.py                  # ✓ 蓝图注册 + 依赖注入
+│   ├── mc.py                      # ✓ MC 控制 API（启停/状态/玩家/踢人/OP/DEOP）
+│   ├── tunnel.py                  # ✓ 穿透配置 API（状态/启停/映射更新）
+│   ├── admin.py                   # ✓ 管理 API（登录/CSRF/密码修改/操作日志）
+│   ├── public.py                  # ✓ 公开状态 API（无需鉴权）
+│   ├── whitelist.py              # ✓ 白名单 API（CRUD/审计记录）
+│   ├── logs_api.py               # ✓ 日志 API（查询/过滤/导出）
+│   ├── server.py                 # ✓ 服务端管理 API（版本/世界/设置）
+│   └── middleware/
+│       ├── auth.py               # ✓ JWT 认证中间件（Bearer/Cookie/302+401 分流）
+│       └── csrf.py               # ✓ CSRF 防护中间件（HMAC/2h 过期/双模式校验）
+├── web/
+│   ├── server.py                  # ✓ Flask 双端口应用工厂（8080 介绍页 + 8443 管理后台）
+│   ├── templates/
+│   │   ├── intro.html             # ✓ 介绍页模板（服务器状态展示）
+│   │   ├── login.html             # ✓ 登录页（JWT 认证流程）
+│   │   ├── admin.html             # ✓ 管理面板（6 卡片+Tab 导航+模态框+Toast）
+│   │   └── setup.html             # ✓ 5 步配置向导（MC/穿透/管理员/EULA 确认）
+│   └── static/
+│       ├── style.css              # ✓ 像素传奇设计系统（CSS 变量/Dark 主题）
+│       └── app.js                 # ✓ 前端 JS（API 客户端/轮询器/CSRF/标签切换/服务器操作）
+├── tests/
+│   └── test_web_api.py            # ✓ 集成测试（34 项：认证/CSRF/API/白名单/日志/隧道/边界）
+├── docs/
+│   ├── DECISIONS.md               # ✓ 技术选型（10 项决策）
+│   ├── user-guide.md              # ✓ 用户手册（10 章/567 行）
+│   ├── frp-research.md            # ✓ frp 调研笔记
+│   ├── mc-research.md             # ✓ MC 服务端调研笔记
+│   └── 前端设计/
+│       ├── template.html          # ✓ 像素传奇设计参考原型
+│       └── data.json              # ✓ 数据形状定义
+└── scripts/
+    ├── start.bat                  # ✓ Windows 启动（自动创建 venv + 安装依赖）
+    └── start.sh                   # ✓ Linux/macOS 启动（同上）
+```

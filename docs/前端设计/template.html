@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>像素传奇 — MC 服务器管理面板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Minecraft-Inspired Design System — 像素传奇 (no-JS edition)
+   ============================================================ */
+:root {
+  --bg:        #1a1c1a;
+  --surface:   #232625;
+  --surface2:  #2d302d;
+  --fg:        #e8e8e0;
+  --muted:     #8b8d85;
+  --border:    #3d4038;
+  --accent:    #5c9e31;
+  --accent2:   #3b7fd4;
+  --danger:    #c0392b;
+  --warning:   #e6a817;
+  --success:   #5c9e31;
+  --font-pixel: 'Press Start 2P', monospace;
+  --font-body:  -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono:  'Cascadia Code', 'Fira Code', ui-monospace, monospace;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --pixel-border: 2px solid var(--border);
+  --transition: 80ms ease;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%; background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 14px; line-height: 1.5; overflow: hidden;
+  background-image:
+    linear-gradient(rgba(0,0,0,0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,0,0,0.3) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ---- buttons ---- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 20px; font-family: var(--font-pixel); font-size: 11px;
+  border: 2px solid; cursor: pointer; text-decoration: none;
+  image-rendering: pixelated; transition: all var(--transition);
+  text-transform: uppercase; letter-spacing: 1px; position: relative; user-select: none; color: inherit;
+}
+.btn::after { content: ''; position: absolute; inset: 3px; border: 1px solid rgba(255,255,255,0.08); pointer-events: none; }
+.btn:active { transform: translateY(2px); }
+.btn-primary { background: var(--accent); color: #fff; border-color: #4a7d28; box-shadow: 0 3px 0 #4a7d28; }
+.btn-primary:hover { background: #6ab33a; }
+.btn-danger { background: var(--danger); color: #fff; border-color: #9b2a20; box-shadow: 0 3px 0 #9b2a20; }
+.btn-danger:hover { background: #d94635; }
+.btn-secondary { background: var(--surface2); color: var(--fg); border-color: var(--border); box-shadow: 0 3px 0 rgba(0,0,0,0.3); }
+.btn-secondary:hover { background: #3a3f3a; }
+.btn-sm { padding: 6px 14px; font-size: 9px; }
+.btn-xs { padding: 4px 10px; font-size: 8px; box-shadow: 0 2px 0 rgba(0,0,0,0.3); }
+.btn-block { width: 100%; }
+
+/* ---- inputs ---- */
+.input {
+  padding: 10px 14px; background: var(--bg); border: 2px solid var(--border);
+  color: var(--fg); font-family: var(--font-mono); font-size: 13px; width: 100%;
+  transition: border-color var(--transition);
+}
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(92,158,49,0.15); }
+.input::placeholder { color: var(--muted); }
+
+/* ---- card ---- */
+.card {
+  background: var(--surface); border: 2px solid var(--border);
+  padding: 20px; position: relative; box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+}
+.card-header {
+  font-family: var(--font-pixel); font-size: 11px; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px;
+  padding-bottom: 10px; border-bottom: 2px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+
+/* ---- pill ---- */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; font-family: var(--font-pixel); font-size: 8px;
+  border: 2px solid; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.pill::before { content: ''; width: 8px; height: 8px; background: currentColor; image-rendering: pixelated; }
+.pill-success { color: var(--success); border-color: var(--success); }
+.pill-danger  { color: var(--danger);  border-color: var(--danger); }
+.pill-warning { color: var(--warning); border-color: var(--warning); }
+
+/* ---- progress bar ---- */
+.progress-bar { height: 12px; background: var(--bg); border: 2px solid var(--border); margin-top: 6px; }
+.progress-bar .fill { height: 100%; background: var(--accent); }
+.progress-bar.warn .fill { background: var(--warning); }
+.progress-bar.danger .fill { background: var(--danger); }
+.progress-label {
+  font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+  margin-top: 4px; display: flex; justify-content: space-between;
+}
+
+/* ---- toggle ---- */
+.toggle { position: relative; width: 44px; height: 24px; display: inline-block; }
+.toggle input { display: none; }
+.toggle .track { position: absolute; inset: 0; background: var(--bg); border: 2px solid var(--border); transition: all var(--transition); }
+.toggle input:checked + .track { background: var(--accent); border-color: #4a7d28; }
+.toggle .thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: var(--fg); transition: all var(--transition); }
+.toggle input:checked + .track .thumb { left: 22px; }
+
+/* ---- table ---- */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  font-family: var(--font-pixel); font-size: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--muted); text-align: left; padding: 12px 14px;
+  border-bottom: 2px solid var(--border); background: var(--surface);
+}
+.data-table td { padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.data-table tr:hover td { background: rgba(255,255,255,0.02); }
+.data-table .mono { font-family: var(--font-mono); font-size: 11px; }
+
+/* ---- log viewer ---- */
+.log-viewer {
+  background: #111311; border: 2px solid var(--border);
+  padding: 16px; max-height: 420px; overflow-y: auto;
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.8;
+}
+.log-line { display: flex; gap: 12px; }
+.log-line .time { color: var(--muted); flex-shrink: 0; }
+.log-line .level { font-family: var(--font-pixel); font-size: 7px; padding: 1px 6px; flex-shrink: 0; text-transform: uppercase; }
+.log-line .level.info  { color: var(--accent2); }
+.log-line .level.warn  { color: var(--warning); }
+.log-line .level.error { color: var(--danger); }
+.log-line .msg { word-break: break-all; }
+
+/* ---- field ---- */
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.field label { font-family: var(--font-pixel); font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+
+/* ---- empty state ---- */
+.empty-state { text-align: center; padding: 40px; color: var(--muted); }
+.empty-state p { font-size: 13px; }
+
+/* ============================================================
+   SHELL — only visible when :target is app views
+   ============================================================ */
+.app-shell { display: none; height: 100%; overflow: hidden; }
+
+#dashboard:target ~ .app-shell,
+#intro:target      ~ .app-shell,
+#setup:target      ~ .app-shell { display: flex; }
+
+/* ============================================================
+   LOGIN VIEW — only visible when #login is targeted or no target
+   ============================================================ */
+.login-screen {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; width: 100%;
+  position: fixed; inset: 0; z-index: 10;
+  background: radial-gradient(ellipse at 50% 30%, rgba(92,158,49,0.08) 0%, transparent 60%), var(--bg);
+}
+
+/* hide login when any app view is targeted */
+#dashboard:target ~ .login-screen,
+#intro:target      ~ .login-screen,
+#setup:target      ~ .login-screen { display: none; }
+
+.login-box { width: 400px; max-width: 90vw; }
+.login-box .card { padding: 32px; }
+.login-title {
+  font-family: var(--font-pixel); font-size: 14px; text-align: center;
+  margin-bottom: 28px; color: var(--accent); line-height: 1.8;
+}
+.login-title span { display: block; font-size: 9px; color: var(--muted); margin-top: 6px; }
+.login-hint {
+  text-align: center; margin-top: 16px;
+  font-size: 11px; color: var(--muted);
+}
+.login-hint code { font-family: var(--font-mono); color: var(--accent); background: var(--bg); padding: 2px 6px; }
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+.sidebar {
+  width: 220px; background: var(--surface); border-right: 2px solid var(--border);
+  display: flex; flex-direction: column; flex-shrink: 0;
+}
+.sidebar-brand {
+  padding: 18px 16px; border-bottom: 2px solid var(--border);
+  font-family: var(--font-pixel); font-size: 10px; line-height: 1.6;
+  color: var(--accent); text-align: center;
+}
+.sidebar-brand small { display: block; font-size: 7px; color: var(--muted); margin-top: 4px; }
+.sidebar-nav { flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; font-family: var(--font-pixel); font-size: 9px;
+  color: var(--muted); border: 2px solid transparent;
+  text-decoration: none; transition: all var(--transition);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.nav-item:hover { color: var(--fg); background: var(--surface2); border-color: var(--border); }
+.nav-badge {
+  margin-left: auto; background: var(--accent); color: #fff;
+  font-family: var(--font-mono); font-size: 10px; padding: 2px 6px; min-width: 20px; text-align: center;
+}
+.sidebar-footer {
+  padding: 12px; border-top: 2px solid var(--border);
+  font-family: var(--font-mono); font-size: 10px; color: var(--muted); text-align: center;
+}
+
+/* sidebar highlight via url hash */
+#dashboard:target ~ .app-shell .nav-dashboard,
+#intro:target      ~ .app-shell .nav-intro,
+#setup:target      ~ .app-shell .nav-setup { color: var(--accent); background: rgba(92,158,49,0.08); border-color: var(--accent); }
+
+/* ---- main area ---- */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 12px 24px; background: var(--surface);
+  border-bottom: 2px solid var(--border); min-height: 52px;
+}
+.topbar-title { font-family: var(--font-pixel); font-size: 11px; flex: 1; }
+.topbar-status { display: flex; align-items: center; gap: 12px; }
+.content { flex: 1; overflow-y: auto; padding: 24px; }
+
+/* ---- view visibility ---- */
+.view { display: none; }
+#dashboard:target ~ .app-shell .view-dashboard,
+#intro:target      ~ .app-shell .view-intro,
+#setup:target      ~ .app-shell .view-setup { display: flex; flex-direction: column; height: 100%; }
+
+/* ============================================================
+   DASHBOARD TABS — CSS-only via hidden radios
+   ============================================================ */
+.tab-radio { display: none; }
+.tab-bar {
+  display: flex; gap: 0; border-bottom: 2px solid var(--border);
+  padding: 0 24px; background: var(--surface);
+}
+.tab-label {
+  padding: 12px 20px; font-family: var(--font-pixel); font-size: 8px;
+  color: var(--muted); border: 2px solid transparent; border-bottom: none;
+  cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px;
+  transition: all var(--transition); margin-bottom: -2px; background: none;
+}
+.tab-label:hover { color: var(--fg); }
+
+#tab-overview:checked  ~ .tab-bar .tab-overview,
+#tab-players:checked   ~ .tab-bar .tab-players,
+#tab-whitelist:checked ~ .tab-bar .tab-whitelist,
+#tab-logs:checked      ~ .tab-bar .tab-logs {
+  color: var(--accent); border-color: var(--border); border-bottom-color: var(--surface); background: var(--surface);
+}
+
+.tab-panel { display: none; }
+#tab-overview:checked  ~ .content .tab-overview,
+#tab-players:checked   ~ .content .tab-players,
+#tab-whitelist:checked ~ .content .tab-whitelist,
+#tab-logs:checked      ~ .content .tab-logs { display: block; }
+
+/* ---- stat grid ---- */
+.stat-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px; margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--surface); border: 2px solid var(--border);
+  padding: 16px; text-align: center;
+}
+.stat-val { font-family: var(--font-pixel); font-size: 22px; color: var(--accent); }
+.stat-val small { font-size: 12px; }
+.stat-lbl {
+  font-family: var(--font-pixel); font-size: 7px; color: var(--muted);
+  margin-top: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.stat-card.warn .stat-val { color: var(--warning); }
+
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+
+/* ---- modal (CSS :target) ---- */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7); z-index: 200;
+  align-items: center; justify-content: center;
+}
+.modal-overlay:target { display: flex; }
+.modal-box {
+  background: var(--surface); border: 2px solid var(--border);
+  padding: 28px; width: 420px; max-width: 90vw;
+}
+.modal-box h3 { font-family: var(--font-pixel); font-size: 11px; color: var(--accent); margin-bottom: 16px; }
+.modal-box p  { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.modal-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 20px; font-family: var(--font-pixel); font-size: 11px;
+  border: 2px solid var(--border); cursor: pointer; text-decoration: none;
+  background: var(--surface2); color: var(--fg);
+  text-transform: uppercase; letter-spacing: 1px;
+  box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+}
+
+/* ============================================================
+   INTRO VIEW
+   ============================================================ */
+#intro:target ~ .app-shell .view-intro { display: flex; flex-direction: column; }
+#intro:target ~ .app-shell .view-intro .content { flex: 1; }
+
+.intro-hero { text-align: center; padding: 60px 24px 40px; }
+.intro-hero h1 { font-family: var(--font-pixel); font-size: 28px; color: var(--accent); line-height: 1.6; }
+.intro-hero .slogan { font-size: 16px; color: var(--muted); margin-top: 8px; }
+.intro-stats { display: flex; justify-content: center; gap: 24px; margin: 32px 0; flex-wrap: wrap; }
+.intro-stat { text-align: center; padding: 16px 28px; background: var(--surface); border: 2px solid var(--border); }
+.intro-stat .val { font-family: var(--font-pixel); font-size: 20px; color: var(--accent); }
+.intro-stat .lbl { font-family: var(--font-pixel); font-size: 7px; color: var(--muted); margin-top: 6px; text-transform: uppercase; }
+.intro-section { max-width: 780px; margin: 0 auto 40px; padding: 0 24px; }
+.intro-section h2 { font-family: var(--font-pixel); font-size: 13px; color: var(--accent); margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+.intro-rules { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.intro-rules li {
+  padding: 10px 16px; background: var(--surface); border: 2px solid var(--border);
+  font-size: 13px; display: flex; align-items: center; gap: 10px;
+}
+.intro-rules li::before { content: '▸'; color: var(--accent); font-family: var(--font-pixel); font-size: 10px; }
+.intro-features { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.intro-feature { padding: 20px; background: var(--surface); border: 2px solid var(--border); }
+.intro-feature h3 { font-family: var(--font-pixel); font-size: 10px; color: var(--accent2); margin-bottom: 8px; }
+.intro-feature p { font-size: 13px; color: var(--muted); }
+
+/* ============================================================
+   SETUP VIEW
+   ============================================================ */
+#setup:target ~ .app-shell .view-setup { display: flex; flex-direction: column; }
+#setup:target ~ .app-shell .view-setup .content { display: flex; align-items: flex-start; justify-content: center; padding-top: 40px; }
+
+.setup-box { width: 560px; max-width: 92vw; }
+
+/* setup progress via hidden radios */
+.setup-radio { display: none; }
+.setup-progress { display: flex; gap: 0; margin-bottom: 24px; }
+.setup-progress label { flex: 1; height: 4px; background: var(--border); cursor: pointer; transition: background 0.2s; }
+.setup-progress label:hover { background: var(--muted); }
+
+#setup-step1:checked ~ .setup-progress .sp-1 { background: var(--accent2); }
+#setup-step2:checked ~ .setup-progress .sp-1,
+#setup-step2:checked ~ .setup-progress .sp-2 { background: var(--accent2); }
+#setup-step3:checked ~ .setup-progress .sp-1,
+#setup-step3:checked ~ .setup-progress .sp-2,
+#setup-step3:checked ~ .setup-progress .sp-3 { background: var(--accent2); }
+#setup-step4:checked ~ .setup-progress .sp-1,
+#setup-step4:checked ~ .setup-progress .sp-2,
+#setup-step4:checked ~ .setup-progress .sp-3,
+#setup-step4:checked ~ .setup-progress .sp-4 { background: var(--accent2); }
+#setup-step5:checked ~ .setup-progress .sp-1,
+#setup-step5:checked ~ .setup-progress .sp-2,
+#setup-step5:checked ~ .setup-progress .sp-3,
+#setup-step5:checked ~ .setup-progress .sp-4,
+#setup-step5:checked ~ .setup-progress .sp-5 { background: var(--accent); }
+
+.setup-panel { display: none; }
+#setup-step1:checked ~ .setup-panels .sp1,
+#setup-step2:checked ~ .setup-panels .sp2,
+#setup-step3:checked ~ .setup-panels .sp3,
+#setup-step4:checked ~ .setup-panels .sp4,
+#setup-step5:checked ~ .setup-panels .sp5 { display: block; }
+
+.setup-panel h2 { font-family: var(--font-pixel); font-size: 13px; color: var(--accent); margin-bottom: 8px; }
+.setup-panel p.desc { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+.setup-nav-row { display: flex; gap: 10px; margin-top: 24px; justify-content: space-between; }
+.setup-nav-row .right { display: flex; gap: 10px; }
+
+/* step link styled as button */
+.step-link {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 20px; font-family: var(--font-pixel); font-size: 11px;
+  border: 2px solid; cursor: pointer; text-decoration: none;
+  transition: all var(--transition); text-transform: uppercase; letter-spacing: 1px;
+  color: inherit; position: relative;
+}
+.step-link::after { content: ''; position: absolute; inset: 3px; border: 1px solid rgba(255,255,255,0.08); pointer-events: none; }
+.step-link:active { transform: translateY(2px); }
+.step-link.next { background: var(--accent); color: #fff; border-color: #4a7d28; box-shadow: 0 3px 0 #4a7d28; }
+.step-link.next:hover { background: #6ab33a; }
+.step-link.prev { background: var(--surface2); color: var(--fg); border-color: var(--border); box-shadow: 0 3px 0 rgba(0,0,0,0.3); }
+.step-link.prev:hover { background: #3a3f3a; }
+.step-link.launch { background: var(--accent2); color: #fff; border-color: #2e65ac; box-shadow: 0 3px 0 #2e65ac; }
+.step-link.launch:hover { background: #4a8fe0; }
+
+/* ---- toast (CSS :target triggered) ---- */
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  padding: 12px 20px; font-family: var(--font-pixel); font-size: 9px;
+  border: 2px solid var(--accent); background: var(--surface); color: var(--fg);
+  z-index: 300; opacity: 0; transform: translateY(10px);
+  transition: all 0.2s; pointer-events: none;
+}
+.toast:target { opacity: 1; transform: translateY(0); }
+
+/* ---- mobile ---- */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .intro-hero h1 { font-size: 18px; }
+  .intro-features { grid-template-columns: 1fr; }
+  .data-table { font-size: 11px; }
+  .data-table th, .data-table td { padding: 8px 10px; }
+  .btn, .step-link { font-size: 9px; padding: 8px 14px; }
+  .tab-label { padding: 10px 14px; font-size: 7px; }
+  .content { padding: 16px; }
+  .topbar { padding: 10px 16px; }
+  .tab-bar { padding: 0 8px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     CSS :target anchors for routing
+     ============================================================ -->
+<div id="dashboard"></div>
+<div id="intro"></div>
+<div id="setup"></div>
+
+<!-- ============================================================
+     LOGIN SCREEN
+     ============================================================ -->
+<div class="login-screen">
+  <div class="login-box card">
+    <div class="login-title">
+      ⛏ 像素传奇<br>
+      <span>MC 服务器管理面板</span>
+    </div>
+    <div class="field">
+      <label>管理员账号</label>
+      <input class="input" type="text" placeholder="输入用户名" value="admin">
+    </div>
+    <div class="field">
+      <label>密码</label>
+      <input class="input" type="password" placeholder="输入密码" value="admin">
+    </div>
+    <a class="btn btn-primary btn-block" style="margin-top:8px;" href="#dashboard">登 录</a>
+    <p class="login-hint">演示账号: <code>admin</code> / <code>admin</code></p>
+  </div>
+</div>
+
+<!-- ============================================================
+     APP SHELL
+     ============================================================ -->
+<div class="app-shell">
+
+  <!-- sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      ⛏ 像素传奇<br>
+      <small>MC 服务器穿透控制</small>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="nav-item nav-dashboard" href="#dashboard">
+        📊 总览
+        <span class="nav-badge">{{data.server.onlinePlayers}}</span>
+      </a>
+      <a class="nav-item nav-intro" href="#intro">
+        🌐 介绍页预览
+      </a>
+      <a class="nav-item nav-setup" href="#setup">
+        ⚙ 配置向导
+      </a>
+      <a class="nav-item" href="#login" style="margin-top:auto;">
+        🚪 退出登录
+      </a>
+    </nav>
+    <div class="sidebar-footer">v1.0 · {{data.server.version}}</div>
+  </aside>
+
+  <!-- main -->
+  <main class="main">
+
+    <!-- ===== DASHBOARD VIEW ===== -->
+    <div class="view view-dashboard">
+      <div class="topbar">
+        <span class="topbar-title">管理面板</span>
+        <div class="topbar-status">
+          <span class="pill pill-success">● 服务器运行中</span>
+          <a class="btn btn-secondary btn-sm" href="#">退出</a>
+        </div>
+      </div>
+
+      <!-- hidden tab radios -->
+      <input class="tab-radio" type="radio" name="tab" id="tab-overview" checked>
+      <input class="tab-radio" type="radio" name="tab" id="tab-players">
+      <input class="tab-radio" type="radio" name="tab" id="tab-whitelist">
+      <input class="tab-radio" type="radio" name="tab" id="tab-logs">
+
+      <div class="tab-bar">
+        <label class="tab-label tab-overview" for="tab-overview">总览</label>
+        <label class="tab-label tab-players" for="tab-players">玩家管理</label>
+        <label class="tab-label tab-whitelist" for="tab-whitelist">白名单</label>
+        <label class="tab-label tab-logs" for="tab-logs">日志</label>
+      </div>
+
+      <div class="content">
+
+        <!-- TAB: Overview -->
+        <div class="tab-panel tab-overview">
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="stat-val">{{data.server.onlinePlayers}}<small>/{{data.server.maxPlayers}}</small></div>
+              <div class="stat-lbl">在线玩家</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-val">{{data.server.tps}}</div>
+              <div class="stat-lbl">TPS</div>
+            </div>
+            <div class="stat-card warn">
+              <div class="stat-val">{{data.server.memory.percent}}%</div>
+              <div class="stat-lbl">内存 ({{data.server.memory.used}}/{{data.server.memory.max}})</div>
+              <div class="progress-bar warn"><div class="fill" style="width:{{data.server.memory.percent}}%;"></div></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-val">{{data.server.uptime}}</div>
+              <div class="stat-lbl">运行时间</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-val">{{data.server.cpu}}</div>
+              <div class="stat-lbl">CPU 使用</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-val">{{data.tunnel.activeTunnels}}</div>
+              <div class="stat-lbl">穿透隧道</div>
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <a class="btn btn-primary" href="#toast-stopped">⏸ 停止服务器</a>
+            <a class="btn btn-secondary" href="#toast-restart">🔄 重启服务器</a>
+            <a class="btn btn-secondary" href="#toast-backup">💾 手动备份</a>
+          </div>
+
+          <div class="card-header" style="margin-top:24px;">穿透隧道状态</div>
+          <table class="data-table">
+            <thead>
+              <tr><th>隧道名称</th><th>本地端口</th><th>公网端口</th><th>协议</th><th>状态</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>MC 游戏端口</td><td class="mono">25565</td><td class="mono">25565</td><td>TCP</td><td><span class="pill pill-success">● 活跃</span></td></tr>
+              <tr><td>服务器介绍页</td><td class="mono">8080</td><td class="mono">8080</td><td>TCP</td><td><span class="pill pill-success">● 活跃</span></td></tr>
+              <tr><td>管理后台</td><td class="mono">8443</td><td class="mono">8443</td><td>TCP</td><td><span class="pill pill-success">● 活跃</span></td></tr>
+            </tbody>
+          </table>
+          <p style="font-size:11px;color:var(--muted);margin-top:8px;">
+            穿透服务器: <code>{{data.tunnel.server}}</code> · 连接时长: {{data.tunnel.uptime}}
+          </p>
+        </div>
+
+        <!-- TAB: Players -->
+        <div class="tab-panel tab-players">
+          <div class="card-header">在线玩家 ({{data.server.onlinePlayers}}/{{data.server.maxPlayers}})</div>
+          <table class="data-table">
+            <thead>
+              <tr><th>玩家名</th><th>延迟</th><th>游戏模式</th><th>加入时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>🧑 Steve</td><td class="mono">24ms</td><td>生存模式</td><td>2小时前</td><td><a class="btn btn-danger btn-xs" href="#modal-kick" style="text-decoration:none;">踢出</a></td></tr>
+              <tr><td>🧑 Alex</td><td class="mono">18ms</td><td>生存模式</td><td>1小时前</td><td><a class="btn btn-danger btn-xs" href="#modal-kick" style="text-decoration:none;">踢出</a></td></tr>
+              <tr><td>🧑 Notch</td><td class="mono">45ms</td><td>创造模式</td><td>30分钟前</td><td><a class="btn btn-danger btn-xs" href="#modal-kick" style="text-decoration:none;">踢出</a></td></tr>
+              <tr><td>🧑 Herobrine</td><td class="mono">999ms</td><td>旁观模式</td><td>???</td><td><a class="btn btn-danger btn-xs" href="#modal-kick" style="text-decoration:none;">踢出</a></td></tr>
+              <tr><td>🧑 CreeperKing</td><td class="mono">32ms</td><td>生存模式</td><td>5小时前</td><td><a class="btn btn-danger btn-xs" href="#modal-kick" style="text-decoration:none;">踢出</a></td></tr>
+              <tr><td>🧑 DiamondHunt</td><td class="mono">15ms</td><td>生存模式</td><td>3小时前</td><td><a class="btn btn-danger btn-xs" href="#modal-kick" style="text-decoration:none;">踢出</a></td></tr>
+              <tr><td>🧑 RedstonePro</td><td class="mono">28ms</td><td>生存模式</td><td>1天前</td><td><a class="btn btn-danger btn-xs" href="#modal-kick" style="text-decoration:none;">踢出</a></td></tr>
+              <tr><td>🧑 BuilderMax</td><td class="mono">22ms</td><td>创造模式</td><td>6小时前</td><td><a class="btn btn-danger btn-xs" href="#modal-kick" style="text-decoration:none;">踢出</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- TAB: Whitelist -->
+        <div class="tab-panel tab-whitelist">
+          <div class="btn-row">
+            <a class="btn btn-primary btn-sm" href="#modal-whitelist-add" style="text-decoration:none;">+ 添加玩家</a>
+            <a class="btn btn-secondary btn-sm" href="#toast-reload">🔄 重载白名单</a>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr><th>玩家名</th><th>添加日期</th><th>操作人</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>🧑 Steve</td><td>2026-06-15</td><td>admin</td><td><a class="btn btn-danger btn-xs" href="#toast-removed" style="text-decoration:none;">移除</a></td></tr>
+              <tr><td>🧑 Alex</td><td>2026-06-15</td><td>admin</td><td><a class="btn btn-danger btn-xs" href="#toast-removed" style="text-decoration:none;">移除</a></td></tr>
+              <tr><td>🧑 Notch</td><td>2026-06-18</td><td>admin</td><td><a class="btn btn-danger btn-xs" href="#toast-removed" style="text-decoration:none;">移除</a></td></tr>
+              <tr><td>🧑 CreeperKing</td><td>2026-06-19</td><td>op</td><td><a class="btn btn-danger btn-xs" href="#toast-removed" style="text-decoration:none;">移除</a></td></tr>
+              <tr><td>🧑 DiamondHunt</td><td>2026-06-20</td><td>admin</td><td><a class="btn btn-danger btn-xs" href="#toast-removed" style="text-decoration:none;">移除</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- TAB: Logs -->
+        <div class="tab-panel tab-logs">
+          <div class="btn-row">
+            <a class="btn btn-secondary btn-sm" href="#tab-logs">🔄 刷新</a>
+            <a class="btn btn-secondary btn-sm" href="#toast-export">📥 导出日志</a>
+            <a class="btn btn-danger btn-sm" href="#toast-clear">🗑 清空日志</a>
+          </div>
+          <div class="card-header">服务器日志</div>
+          <div class="log-viewer">
+            <div class="log-line"><span class="time">14:35:22</span><span class="level info">info</span><span class="msg">玩家 Steve 加入了游戏</span></div>
+            <div class="log-line"><span class="time">14:33:10</span><span class="level info">info</span><span class="msg">玩家 Alex 在坐标 (-128, 64, 256) 获得了成就 [钻石！]</span></div>
+            <div class="log-line"><span class="time">14:30:05</span><span class="level warn">warn</span><span class="msg">玩家 Herobrine 的延迟过高 (999ms)</span></div>
+            <div class="log-line"><span class="time">14:28:47</span><span class="level info">info</span><span class="msg">自动保存完成 (耗时 1.2s)</span></div>
+            <div class="log-line"><span class="time">14:25:00</span><span class="level info">info</span><span class="msg">玩家 RedstonePro 加入了游戏</span></div>
+            <div class="log-line"><span class="time">14:20:33</span><span class="level error">error</span><span class="msg">无法解析玩家 CreeperKing 的聊天消息：无效字符</span></div>
+            <div class="log-line"><span class="time">14:18:15</span><span class="level info">info</span><span class="msg">玩家 BuilderMax 使用了命令 /home</span></div>
+            <div class="log-line"><span class="time">14:15:00</span><span class="level info">info</span><span class="msg">备份完成：world_backup_20260622.zip (1.2GB)</span></div>
+          </div>
+          <div class="card-header" style="margin-top:24px;">操作日志</div>
+          <table class="data-table">
+            <thead>
+              <tr><th>时间</th><th>操作人</th><th>IP</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="mono">2026-06-22 14:30</td><td>admin</td><td class="mono">192.168.1.100</td><td>重启服务器</td></tr>
+              <tr><td class="mono">2026-06-22 12:15</td><td>admin</td><td class="mono">192.168.1.100</td><td>添加白名单：DiamondHunt</td></tr>
+              <tr><td class="mono">2026-06-22 10:00</td><td>op</td><td class="mono">10.0.0.55</td><td>踢出玩家：Griefer123</td></tr>
+              <tr><td class="mono">2026-06-21 22:45</td><td>admin</td><td class="mono">192.168.1.100</td><td>修改穿透端口映射</td></tr>
+              <tr><td class="mono">2026-06-21 18:30</td><td>admin</td><td class="mono">192.168.1.100</td><td>修改 JVM 启动参数</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div><!-- .content -->
+    </div><!-- .view-dashboard -->
+
+    <!-- ===== INTRO VIEW ===== -->
+    <div class="view view-intro">
+      <div class="topbar">
+        <span class="topbar-title">服务器介绍页预览</span>
+        <div class="topbar-status">
+          <a class="btn btn-secondary btn-sm" href="#dashboard">← 返回管理</a>
+        </div>
+      </div>
+      <div class="content" style="overflow-y:auto;">
+        <div class="intro-hero">
+          <h1>{{data.intro.serverName}}</h1>
+          <p class="slogan">{{data.intro.slogan}}</p>
+          <div class="intro-stats">
+            <div class="intro-stat">
+              <div class="val">{{data.server.onlinePlayers}}/{{data.server.maxPlayers}}</div>
+              <div class="lbl">在线玩家</div>
+            </div>
+            <div class="intro-stat">
+              <div class="val">{{data.server.version}}</div>
+              <div class="lbl">游戏版本</div>
+            </div>
+            <div class="intro-stat">
+              <div class="val">生存</div>
+              <div class="lbl">游戏模式</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="intro-section">
+          <h2>📖 关于我们</h2>
+          <p style="font-size:14px;color:var(--muted);line-height:1.8;">{{data.intro.description}}</p>
+        </div>
+
+        <div class="intro-section">
+          <h2>📜 服务器规则</h2>
+          <ul class="intro-rules">
+            <li>禁止作弊、使用外挂或利用漏洞</li>
+            <li>尊重每一位玩家，禁止人身攻击</li>
+            <li>未经允许不要破坏他人建筑</li>
+            <li>禁止在公共频道刷屏或发广告</li>
+            <li>使用农场时请遵守公共规则</li>
+          </ul>
+        </div>
+
+        <div class="intro-section">
+          <h2>✨ 特色功能</h2>
+          <div class="intro-features">
+            <div class="intro-feature"><h3>纯生存体验</h3><p>无飞行、无传送，原汁原味的生存挑战</p></div>
+            <div class="intro-feature"><h3>社区经济</h3><p>玩家自建商店，钻石为通用货币</p></div>
+            <div class="intro-feature"><h3>定期活动</h3><p>每周建筑大赛、每月 Boss 挑战</p></div>
+            <div class="intro-feature"><h3>领地保护</h3><p>GriefPrevention 插件保护你的家园</p></div>
+          </div>
+        </div>
+
+        <div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-pixel);font-size:8px;">
+          ⛏ {{data.intro.serverName}} · Minecraft {{data.intro.version}}
+        </div>
+      </div>
+    </div><!-- .view-intro -->
+
+    <!-- ===== SETUP VIEW ===== -->
+    <div class="view view-setup">
+      <div class="topbar">
+        <span class="topbar-title">配置向导</span>
+        <div class="topbar-status">
+          <a class="btn btn-secondary btn-sm" href="#dashboard">← 返回管理</a>
+        </div>
+      </div>
+      <div class="content">
+        <div class="setup-box">
+
+          <!-- setup step radios -->
+          <input class="setup-radio" type="radio" name="setup-step" id="setup-step1" checked>
+          <input class="setup-radio" type="radio" name="setup-step" id="setup-step2">
+          <input class="setup-radio" type="radio" name="setup-step" id="setup-step3">
+          <input class="setup-radio" type="radio" name="setup-step" id="setup-step4">
+          <input class="setup-radio" type="radio" name="setup-step" id="setup-step5">
+
+          <div class="setup-progress">
+            <label class="sp-1" for="setup-step1"></label>
+            <label class="sp-2" for="setup-step2"></label>
+            <label class="sp-3" for="setup-step3"></label>
+            <label class="sp-4" for="setup-step4"></label>
+            <label class="sp-5" for="setup-step5"></label>
+          </div>
+
+          <div class="setup-panels">
+
+            <!-- Step 1 -->
+            <div class="setup-panel sp1 card">
+              <h2>⛏ 欢迎使用 MC 服务器穿透控制</h2>
+              <p class="desc">此向导将帮助您完成首次配置：MC 服务端参数、内网穿透、管理员账号。已有服务端 JAR？可跳过下载。</p>
+              <p class="desc" style="color:var(--warning);">⚠ 自动下载 MC 服务端需同意 Mojang EULA 协议。</p>
+              <div class="setup-nav-row">
+                <span></span>
+                <div class="right">
+                  <label class="step-link next" for="setup-step2">开始配置 →</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="setup-panel sp2 card">
+              <h2>⚙ MC 服务端配置</h2>
+              <p class="desc">设置 Minecraft 服务端基本参数。</p>
+              <div class="field"><label>MC 版本</label>
+                <select class="input"><option>1.20.4 (推荐)</option><option>1.20.6</option><option>1.21</option></select>
+              </div>
+              <div class="field"><label>服务端口</label><input class="input" value="25565"></div>
+              <div class="field"><label>最大玩家数</label><input class="input" value="20"></div>
+              <div class="field"><label>JVM 启动参数</label><input class="input" value="-Xmx4G -Xms2G"></div>
+              <div class="field" style="flex-direction:row;align-items:center;gap:12px;">
+                <label class="toggle"><input type="checkbox" checked><span class="track"><span class="thumb"></span></span></label>
+                <span style="font-size:13px;">崩溃后自动重启</span>
+              </div>
+              <div class="setup-nav-row">
+                <label class="step-link prev" for="setup-step1">← 上一步</label>
+                <div class="right">
+                  <label class="step-link next" for="setup-step3">下一步 →</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="setup-panel sp3 card">
+              <h2>🌐 内网穿透配置</h2>
+              <p class="desc">配置 frp 穿透服务器信息和端口映射。</p>
+              <div class="field"><label>frp 服务器地址</label><input class="input" value="frp.example.com"></div>
+              <div class="field"><label>frp 服务器端口</label><input class="input" value="7000"></div>
+              <div class="field"><label>认证令牌 (Token)</label><input class="input" type="password" value="your_token_here"></div>
+              <p style="font-size:11px;color:var(--muted);margin:12px 0;">将映射以下端口到公网：</p>
+              <table class="data-table">
+                <thead><tr><th>用途</th><th>本地端口</th><th>协议</th></tr></thead>
+                <tbody>
+                  <tr><td>MC 游戏端口</td><td class="mono">25565</td><td>TCP</td></tr>
+                  <tr><td>服务器介绍页</td><td class="mono">8080</td><td>TCP</td></tr>
+                  <tr><td>管理后台</td><td class="mono">8443</td><td>TCP</td></tr>
+                </tbody>
+              </table>
+              <div class="setup-nav-row">
+                <label class="step-link prev" for="setup-step2">← 上一步</label>
+                <div class="right">
+                  <label class="step-link next" for="setup-step4">下一步 →</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 4 -->
+            <div class="setup-panel sp4 card">
+              <h2>🔐 创建管理员账号</h2>
+              <p class="desc">设置管理后台的登录凭据（密码使用 BCrypt 加密存储）。</p>
+              <div class="field"><label>管理员用户名</label><input class="input" value="admin"></div>
+              <div class="field"><label>密码</label><input class="input" type="password" value="pass123"></div>
+              <div class="field"><label>确认密码</label><input class="input" type="password" value="pass123"></div>
+              <div class="field"><label>会话超时（秒）</label><input class="input" value="3600"></div>
+              <div class="setup-nav-row">
+                <label class="step-link prev" for="setup-step3">← 上一步</label>
+                <div class="right">
+                  <label class="step-link next" for="setup-step5">下一步 →</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 5 -->
+            <div class="setup-panel sp5 card">
+              <h2>✅ 配置完成！</h2>
+              <p class="desc">所有设置已保存。点击下方按钮一键启动所有服务。</p>
+              <div style="background:var(--bg);border:2px solid var(--border);padding:16px;margin-bottom:16px;">
+                <p style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">
+                  ✓ MC 服务端: 1.20.4, 端口 25565, 最大 20 人<br>
+                  ✓ 穿透节点: frp.example.com:7000 (TCP×3)<br>
+                  ✓ 管理员: admin · 会话超时 3600s<br>
+                  ✓ 自动重启: 开启 · 崩溃重试: 3次
+                </p>
+              </div>
+              <p class="desc" style="color:var(--warning);">⚠ 首次启动将自动下载 MC 服务端核心。请阅读并确认 Mojang EULA。</p>
+              <div class="field" style="flex-direction:row;align-items:center;gap:12px;">
+                <label class="toggle"><input type="checkbox" id="eula-agree"><span class="track"><span class="thumb"></span></span></label>
+                <span style="font-size:13px;">我已阅读并同意 Mojang EULA</span>
+              </div>
+              <div class="setup-nav-row">
+                <label class="step-link prev" for="setup-step4">← 上一步</label>
+                <div class="right">
+                  <a class="step-link launch" href="#dashboard">🚀 一键启动</a>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- .setup-panels -->
+        </div><!-- .setup-box -->
+      </div><!-- .content -->
+    </div><!-- .view-setup -->
+
+  </main>
+</div><!-- .app-shell -->
+
+<!-- ============================================================
+     MODALS
+     ============================================================ -->
+<div class="modal-overlay" id="modal-kick">
+  <div class="modal-box">
+    <h3>⚠ 确认踢出玩家</h3>
+    <p>确定要踢出该玩家吗？此操作不可撤销。</p>
+    <div class="modal-actions">
+      <a class="modal-close" href="#tab-players">取消</a>
+      <a class="modal-close" href="#toast-kicked" style="background:var(--danger);color:#fff;border-color:#9b2a20;">确认踢出</a>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-whitelist-add">
+  <div class="modal-box">
+    <h3>+ 添加白名单</h3>
+    <div class="field">
+      <label>玩家名</label>
+      <input class="input" placeholder="输入 Minecraft 玩家名">
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <a class="modal-close" href="#tab-whitelist">取消</a>
+      <a class="modal-close" href="#toast-added" style="background:var(--accent);color:#fff;border-color:#4a7d28;">添加</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     TOAST NOTIFICATIONS (CSS :target)
+     ============================================================ -->
+<div class="toast" id="toast-stopped" style="border-color:var(--danger);">⏸ 服务器已停止</div>
+<div class="toast" id="toast-restart" style="border-color:var(--warning);">🔄 服务器正在重启...</div>
+<div class="toast" id="toast-backup">💾 备份任务已加入队列</div>
+<div class="toast" id="toast-kicked" style="border-color:var(--danger);">👢 玩家已被踢出</div>
+<div class="toast" id="toast-added">✅ 白名单已添加</div>
+<div class="toast" id="toast-removed" style="border-color:var(--danger);">🗑 白名单已移除</div>
+<div class="toast" id="toast-reload">🔄 白名单已重新加载</div>
+<div class="toast" id="toast-export">📥 日志已导出到文件</div>
+<div class="toast" id="toast-clear" style="border-color:var(--danger);">🗑 日志已清空</div>
+
+</body>
+</html>

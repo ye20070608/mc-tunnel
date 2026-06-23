@@ -1,0 +1,34 @@
+{
+  "sources": [
+    {
+      "type": "local_file",
+      "path": "mqp0xu21-Project.md",
+      "description": "项目设计方案 v1.1 — 一体化MC服务器穿透控制软件完整规格文档",
+      "role": "design_spec"
+    },
+    {
+      "type": "local_file",
+      "path": "data.json",
+      "description": "模拟预览数据 — 包含服务器状态、玩家列表、白名单、日志、隧道状态、介绍页内容和配置向导步骤",
+      "role": "preview_data"
+    }
+  ],
+  "generation": {
+    "date": "2026-06-22",
+    "engine": "Open Design live-artifact",
+    "designSystem": "自定义 Minecraft 像素风格 (像素传奇)",
+    "direction": "游戏/社区感 — Minecraft 风格、像素元素、活泼",
+    "screens": [
+      "登录页 (admin/admin 演示账号)",
+      "管理主面板 — 总览/玩家管理/白名单/日志 四个标签页",
+      "服务器介绍页 — 公开对外展示",
+      "首次安装配置向导 — 5步引导"
+    ],
+    "responsive": ["桌面网页 (1920px+)", "移动端 (< 768px)"],
+    "notes": "视觉方向采用深色岩板底 + 草绿 accent 的 Minecraft 灵感设计系统。像素字体 Press Start 2P 用于标题和按钮，系统字体用于正文保证可读性。所有管理操作（启停服务器、踢人、白名单管理）均有交互反馈。"
+  },
+  "dataFreshness": {
+    "type": "static_preview",
+    "note": "当前为静态预览数据。后续可接入 daemon connector 获取真实 MC 服务器状态、玩家列表和日志，支持一键刷新。"
+  }
+}

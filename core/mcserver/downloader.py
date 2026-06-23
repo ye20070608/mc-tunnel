@@ -1,0 +1,573 @@
+"""
+PaperMC 服务端 JAR 下载模块。
+
+通过 PaperMC v2 API 获取指定版本的 JAR 文件，支持：
+- 获取最新 build 信息
+- 流式下载 + 进度显示
+- SHA256 完整性校验
+"""
+
+from __future__ import annotations
+
+import hashlib
+import threading
+from pathlib import Path
+from typing import Any, Callable
+
+import requests
+from loguru import logger
+
+# ---------------------------------------------------------------------------
+# PaperMC v2 API
+# ---------------------------------------------------------------------------
+
+PAPER_API_BASE = "https://api.papermc.io/v2/projects/paper"
+
+# ---------------------------------------------------------------------------
+# Thread-safe download progress state (for Web UI polling)
+# ---------------------------------------------------------------------------
+
+_download_progress_lock = threading.Lock()
+_download_progress: dict[str, Any] = {
+    "status": "idle",    # "idle" | "downloading" | "done" | "error"
+    "version": "",
+    "percent": 0.0,
+    "downloaded_mb": 0.0,
+    "total_mb": 0.0,
+    "phase": "",         # "paperclip" | "mojang_jar" | ""
+}
+
+
+def get_download_progress() -> dict[str, Any]:
+    """Return the current download progress state (thread-safe copy)."""
+    with _download_progress_lock:
+        return dict(_download_progress)
+
+
+def _update_progress_state(
+    version: str, downloaded: int, total: int, phase: str = ""
+) -> None:
+    """Update the global download progress state (called from callback)."""
+    with _download_progress_lock:
+        _download_progress["status"] = "downloading"
+        _download_progress["version"] = version
+        _download_progress["total_mb"] = total / (1024 * 1024) if total > 0 else 0.0
+        _download_progress["downloaded_mb"] = downloaded / (1024 * 1024)
+        _download_progress["phase"] = phase
+        if total > 0:
+            _download_progress["percent"] = round(downloaded / total * 100, 1)
+
+
+def _clear_progress_state() -> None:
+    """Reset progress counters between download phases."""
+    with _download_progress_lock:
+        _download_progress["percent"] = 0.0
+        _download_progress["downloaded_mb"] = 0.0
+        _download_progress["phase"] = ""
+
+
+def _mark_progress_done() -> None:
+    """Mark the entire multi-phase download as successfully completed."""
+    with _download_progress_lock:
+        _download_progress["status"] = "done"
+        _download_progress["phase"] = ""
+
+
+def _mark_progress_error() -> None:
+    """Mark the entire multi-phase download as failed."""
+    with _download_progress_lock:
+        _download_progress["status"] = "error"
+        _download_progress["phase"] = ""
+
+
+def _http_get(endpoint: str) -> dict | list:
+    """发送 GET 请求到 PaperMC API，返回 JSON 数据。"""
+    url = f"{PAPER_API_BASE}/{endpoint.lstrip('/')}"
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    """将版本号字符串转为可比较的元组。
+
+    例如 "1.21.4" → (1, 21, 4)，"1.9" → (1, 9)。
+    用于正确的语义版本排序（而非字典序）。
+    """
+    try:
+        return tuple(int(x) for x in version.split("."))
+    except ValueError:
+        return (0,)
+
+
+def get_available_versions() -> list[str]:
+    """获取 PaperMC 支持的所有版本列表，按版本号倒序排列。"""
+    data = _http_get("")
+    versions: list[str] = data.get("versions", [])
+    versions.sort(key=_version_key, reverse=True)
+    return versions
+
+
+def list_stable_versions(limit: int = 20) -> list[str]:
+    """获取 PaperMC 可用稳定版本列表（仅正式版，不含快照）。
+
+    Args:
+        limit: 最多返回的版本数量
+
+    Returns:
+        按版本号倒序排列的版本列表，如 ["1.21", "1.20.6", "1.20.4", ...]
+    """
+    all_versions = get_available_versions()
+    # 过滤掉包含 "-pre"、"-rc"、"-alpha"、"-beta" 的预发布版本
+    stable = [v for v in all_versions if not any(
+        tag in v for tag in ("-pre", "-rc", "-alpha", "-beta", "-snapshot")
+    )]
+    return stable[:limit]
+
+
+def get_latest_build(version: str) -> int:
+    """获取指定版本的 PaperMC 最新 build 编号。"""
+    data = _http_get(f"versions/{version}")
+    builds: list[int] = data.get("builds", [])
+    if not builds:
+        raise ValueError(f"PaperMC 版本 '{version}' 没有可用构建")
+    return builds[-1]
+
+
+def get_download_info(version: str, build: int) -> dict:
+    """获取指定 build 的下载信息（文件 URL、SHA256、版本名等）。
+
+    返回:
+        {
+            "version": str,      # 如 "1.20.4"
+            "build": int,        # 如 496
+            "file_name": str,    # 如 "paper-1.20.4-496.jar"
+            "download_url": str, # 下载链接
+            "sha256": str,       # SHA256 哈希值
+        }
+    """
+    data = _http_get(f"versions/{version}/builds/{build}")
+    version_name: str = data.get("version", version)
+    build_num: int = data.get("build", build)
+    downloads: dict = data.get("downloads", {})
+    application: dict = downloads.get("application", {})
+
+    file_name: str = application.get("name", f"paper-{version}-{build}.jar")
+    sha256: str = application.get("sha256", "")
+
+    download_url = (
+        f"{PAPER_API_BASE}/versions/{version}/builds/{build}"
+        f"/downloads/{file_name}"
+    )
+
+    return {
+        "version": version_name,
+        "build": build_num,
+        "file_name": file_name,
+        "download_url": download_url,
+        "sha256": sha256,
+    }
+
+
+def download_jar(
+    download_url: str,
+    output_path: Path,
+    expected_sha256: str = "",
+    progress_callback: Callable[[int, int, int], None] | None = None,
+    chunk_size: int = 8192,
+    verify: bool = True,
+) -> Path:
+    """流式下载 JAR 文件，支持进度回调和 SHA256 校验。
+
+    Args:
+        download_url: 下载链接
+        output_path: 输出文件路径
+        expected_sha256: 期望的 SHA256（空字符串则跳过校验）
+        progress_callback: 进度回调 (downloaded_bytes, total_bytes, chunk_bytes)
+        chunk_size: 下载块大小
+        verify: 是否验证 SSL 证书（Mojang 服务器需设为 False）
+
+    Returns:
+        已下载文件的 Path
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    resp = requests.get(download_url, stream=True, timeout=300, verify=verify)
+    resp.raise_for_status()
+
+    total = int(resp.headers.get("content-length", 0))
+    sha256_hash = hashlib.sha256()
+    downloaded = 0
+    last_bps = 0
+
+    # 用于进度显示的临时文件
+    tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+
+    try:
+        with open(tmp_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    sha256_hash.update(chunk)
+                    downloaded += len(chunk)
+                    if progress_callback:
+                        progress_callback(downloaded, total, last_bps)
+    except Exception:
+        # 下载失败，清理临时文件
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
+
+    # SHA256 校验
+    actual_sha256 = sha256_hash.hexdigest()
+    if expected_sha256 and actual_sha256 != expected_sha256:
+        tmp_path.unlink()
+        raise ValueError(
+            f"SHA256 校验失败\n"
+            f"  期望: {expected_sha256}\n"
+            f"  实际: {actual_sha256}"
+        )
+
+    # 重命名为最终文件
+    tmp_path.replace(output_path)
+
+    file_size_mb = output_path.stat().st_size / (1024 * 1024)
+    logger.info(f"下载完成: {output_path.name} ({file_size_mb:.1f} MB)")
+
+    return output_path
+
+
+# ---------------------------------------------------------------------------
+# Mojang 原版服务端 JAR 预下载
+# ---------------------------------------------------------------------------
+# Paperclip（PaperMC 引导器）运行时需要从 Mojang 服务器下载原版 Minecraft
+# 服务端 JAR。在部分网络环境（尤其是中国大陆）中，Java 的 SSL 证书信任库
+# 可能无法验证 Mojang 的 HTTPS 证书，导致 PKIX path building failed。
+#
+# 通过 Python 的 requests 库（使用 certifi 证书包）提前下载原版 JAR
+# 到 Paperclip 的缓存目录（cache/mojang_{version}.jar），彻底绕过
+# Java SSL 问题。
+
+MOJANG_MANIFEST_URL = (
+    "https://launchermeta.mojang.com/mc/game/version_manifest.json"
+)
+
+# Mojang 的 SSL 证书在某些网络环境（尤其是中国大陆）无法被 certifi 验证。
+# 使用 verify=False 回退策略，同时用 SHA1 校验保证下载文件完整性。
+_MOJANG_SSL_OK = True  # 首次尝试 verify=True，失败后切换
+
+
+def _mojang_request(url: str, stream: bool = False, timeout: int = 30) -> requests.Response:
+    """Make a GET request to a Mojang API endpoint.
+
+    Tries ``verify=True`` first; falls back to ``verify=False`` with
+    ``urllib3`` warning suppressed if the SSL handshake fails.
+    """
+    global _MOJANG_SSL_OK
+    import urllib3
+
+    if _MOJANG_SSL_OK:
+        try:
+            return requests.get(url, timeout=timeout, stream=stream)
+        except requests.exceptions.SSLError:
+            _MOJANG_SSL_OK = False
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            logger.debug("Mojang SSL 校验失败，回退到非校验模式")
+
+    return requests.get(url, timeout=timeout, stream=stream, verify=False)
+
+
+def _get_mojang_server_info(version: str) -> dict[str, Any]:
+    """Fetch the vanilla Minecraft server JAR download info for *version*.
+
+    Follows the Mojang API chain:
+      1. Version manifest → find the version entry → metadata URL
+      2. Version metadata → ``downloads.server.url``
+
+    Returns:
+        Dict with ``url``, ``sha1``, ``size``.  Empty dict if unavailable.
+    """
+    # 1. Get version manifest
+    try:
+        manifest: dict = _mojang_request(MOJANG_MANIFEST_URL).json()
+    except Exception as exc:
+        logger.warning(f"无法获取 Mojang 版本清单: {exc}")
+        return {}
+
+    version_url: str = ""
+    for entry in manifest.get("versions", []):
+        if entry.get("id") == version:
+            version_url = entry.get("url", "")
+            break
+
+    if not version_url:
+        logger.warning(f"Mojang 版本清单中未找到 {version}")
+        return {}
+
+    # 2. Get version metadata → downloads.server
+    try:
+        meta: dict = _mojang_request(version_url).json()
+    except Exception as exc:
+        logger.warning(f"无法获取 Mojang 版本元数据: {exc}")
+        return {}
+
+    server: dict = meta.get("downloads", {}).get("server", {})
+    return {
+        "url": server.get("url", ""),
+        "sha1": server.get("sha1", ""),
+        "size": server.get("size", 0),
+    }
+
+
+def _ensure_mojang_jar(
+    version: str,
+    output_dir: str = ".",
+    show_progress: bool = True,
+) -> Path | None:
+    """Download the vanilla Minecraft server JAR into Paperclip's cache dir.
+
+    Paperclip looks for ``cache/mojang_{version}.jar`` at startup; if the
+    file already exists it skips the Java-side download entirely.
+
+    Returns:
+        Path to the cached JAR, or ``None`` if the download failed or
+        the Mojang API didn't provide a URL.
+    """
+    cache_dir = Path(output_dir) / "cache"
+    jar_name = f"mojang_{version}.jar"
+    cache_path = cache_dir / jar_name
+
+    # Already cached — nothing to do
+    if cache_path.exists():
+        size_mb = cache_path.stat().st_size / (1024 * 1024)
+        logger.info(f"Mojang 原版 JAR 已缓存: {jar_name} ({size_mb:.1f} MB)")
+        return cache_path
+
+    logger.info(f"获取 Mojang {version} 服务端下载链接...")
+    info = _get_mojang_server_info(version)
+
+    if not info.get("url"):
+        logger.warning(f"Mojang {version} 没有服务端 JAR 下载链接，跳过预下载")
+        return None
+
+    total_mb = info.get("size", 0) / (1024 * 1024)
+    logger.info(f"下载 Mojang {version} 原版服务端 ({total_mb:.0f} MB)...")
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _mojang_progress(downloaded: int, total: int, _bps: int) -> None:
+        _update_progress_state(version, downloaded, total, phase="mojang_jar")
+        if not show_progress or total == 0:
+            return
+        pct = downloaded / total * 100
+        downloaded_mb = downloaded / (1024 * 1024)
+        total_mb = total / (1024 * 1024)
+        print(
+            f"\r  [>>] Minecraft {version} ... {downloaded_mb:.1f}/{total_mb:.1f} MB ({pct:.0f}%)   ",
+            end="",
+            flush=True,
+        )
+
+    try:
+        download_jar(
+            download_url=info["url"],
+            output_path=cache_path,
+            expected_sha256="",  # Mojang 用 SHA1 而非 SHA256
+            progress_callback=_mojang_progress,
+            verify=_MOJANG_SSL_OK,
+        )
+        if show_progress:
+            print()  # 换行
+        _clear_progress_state()
+        logger.info(f"Mojang 原版 JAR 已缓存: {jar_name}")
+    except Exception as exc:
+        _clear_progress_state()
+        logger.warning(f"Mojang 原版 JAR 下载失败（Paperclip 将尝试自行下载）: {exc}")
+        if cache_path.exists():
+            cache_path.unlink()
+        return None
+
+    return cache_path
+
+
+# ---------------------------------------------------------------------------
+# 编排函数
+# ---------------------------------------------------------------------------
+
+def _find_existing_jar(version: str, output_dir: str) -> Path | None:
+    """查找已存在的版本对应 JAR 文件。
+
+    按优先级查找：
+    1. paper-{version}-*.jar（PaperMC 下载的精确匹配）
+    2. paper-*.jar（任何 PaperMC JAR）
+    3. server.jar（通用命名）
+    """
+    base = Path(output_dir)
+
+    # 精确版本匹配
+    matches = list(base.glob(f"paper-{version}-*.jar"))
+    if matches:
+        matches.sort(reverse=True)  # 取最新 build
+        return matches[0]
+
+    # 模糊匹配
+    matches = list(base.glob("paper-*.jar"))
+    if matches:
+        matches.sort(reverse=True)
+        return matches[0]
+
+    # 通用名
+    generic = base / "server.jar"
+    if generic.exists():
+        return generic
+
+    return None
+
+
+def ensure_server_jar(
+    version: str = "1.20.1",
+    server_jar_path: str = "",
+    output_dir: str = ".",
+    show_progress: bool = True,
+) -> Path:
+    """确保 MC 服务端 JAR 文件就绪。
+
+    优先级：
+    1. 用户指定了 server_jar_path → 直接使用
+    2. paper-{version}-*.jar 已存在 → 使用
+    3. paper-*.jar / server.jar 已存在（可能不同版本）→ 使用
+    4. 都不满足 → 从 PaperMC API 下载最新构建
+
+    JAR 文件保存为 paper-{version}-{build}.jar（版本命名，支持多版本共存）。
+
+    Args:
+        version: PaperMC 版本号
+        server_jar_path: 用户指定的 JAR 路径（空则忽略）
+        output_dir: 输出目录
+        show_progress: 是否在控制台显示下载进度
+
+    Returns:
+        可用的 JAR 文件 Path
+    """
+    # 1. 用户指定路径
+    if server_jar_path:
+        path = Path(server_jar_path)
+        if path.exists():
+            logger.info(f"使用指定的服务端 JAR: {path}")
+            return path.resolve()
+        else:
+            raise FileNotFoundError(f"指定的服务端 JAR 不存在: {path}")
+
+    # 2. 检查是否已有该版本的 JAR
+    existing = _find_existing_jar(version, output_dir)
+    if existing:
+        size_mb = existing.stat().st_size / (1024 * 1024)
+        logger.info(f"服务端 JAR 已存在: {existing.name} ({size_mb:.1f} MB)")
+        # 即使 JAR 已存在，也需要确保 Mojang 原版 JAR 已缓存
+        _ensure_mojang_jar(version, output_dir, show_progress)
+        _mark_progress_done()
+        return existing.resolve()
+
+    # 3. 从 PaperMC 下载
+    logger.info(f"PaperMC {version} — 获取最新构建信息...")
+    build = get_latest_build(version)
+    info = get_download_info(version, build)
+
+    logger.info(
+        f"准备下载 PaperMC {info['version']} build #{info['build']} "
+        f"({info['file_name']})"
+    )
+
+    # 保存为版本命名文件，支持多版本共存
+    output_path = Path(output_dir) / info["file_name"]
+
+    def _progress(downloaded: int, total: int, _bps: int) -> None:
+        _update_progress_state(info["version"], downloaded, total)
+        if not show_progress or total == 0:
+            return
+        pct = downloaded / total * 100
+        downloaded_mb = downloaded / (1024 * 1024)
+        total_mb = total / (1024 * 1024)
+        print(
+            f"\r  [>>] PaperMC {info['version']} ... {downloaded_mb:.1f}/{total_mb:.1f} MB ({pct:.0f}%)   ",
+            end="",
+            flush=True,
+        )
+
+    try:
+        download_jar(
+            download_url=info["download_url"],
+            output_path=output_path,
+            expected_sha256=info["sha256"],
+            progress_callback=_progress,
+        )
+        if show_progress:
+            print()  # 换行
+
+        # 同时创建/更新 server.jar 软链接（Windows 用副本）
+        _update_server_jar_link(output_path, Path(output_dir) / "server.jar")
+        _clear_progress_state()  # 重置计数器，准备下一阶段
+    except (requests.HTTPError, ValueError) as e:
+        _mark_progress_error()
+        logger.error(str(e))
+        raise
+
+    # 预下载 Mojang 原版 JAR 到 cache/，避免 Paperclip 用 Java 下载时 SSL 失败
+    _ensure_mojang_jar(version, output_dir, show_progress)
+
+    _mark_progress_done()
+    return output_path.resolve()
+
+
+def _update_server_jar_link(source: Path, target: Path) -> None:
+    """更新 server.jar 指向最新下载的 JAR。
+
+    Windows 不支持 os.symlink 需要管理员权限，使用副本方式。
+    """
+    import shutil
+    import sys
+
+    # 删除旧的链接/副本
+    if target.exists() or target.is_symlink():
+        target.unlink()
+
+    if sys.platform == "win32":
+        # Windows：复制文件（硬链接需同分区，用副本最稳妥）
+        shutil.copy2(source, target)
+    else:
+        # Linux/macOS：创建符号链接
+        try:
+            target.symlink_to(source.name)
+        except OSError:
+            shutil.copy2(source, target)
+
+    logger.debug(f"server.jar → {source.name}")
+
+
+def switch_version(
+    version: str,
+    output_dir: str = ".",
+    show_progress: bool = True,
+) -> Path:
+    """切换到指定 PaperMC 版本。
+
+    下载新版本 JAR（如果还没有），保留旧版本文件不删除。
+    更新 server.jar 指向新版本。
+
+    Args:
+        version: 目标 PaperMC 版本号
+        output_dir: 输出目录
+        show_progress: 是否显示下载进度
+
+    Returns:
+        新版本 JAR 文件 Path
+    """
+    logger.info(f"切换 MC 版本: → {version}")
+    jar_path = ensure_server_jar(
+        version=version,
+        server_jar_path="",
+        output_dir=output_dir,
+        show_progress=show_progress,
+    )
+    logger.info(f"版本切换完成: {jar_path.name}")
+    return jar_path

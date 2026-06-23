@@ -1,0 +1,1 @@
+"""Minecraft server adapter package."""

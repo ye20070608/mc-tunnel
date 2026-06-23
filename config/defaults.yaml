@@ -1,0 +1,72 @@
+# MC隧道控制器 — 默认配置模板
+# 首次运行时，程序会将此文件复制为 config/config.yaml
+# 请勿直接编辑此文件，编辑 config/config.yaml 即可
+
+# MC 服务端配置
+mc:
+  version: "1.20.1"                 # PaperMC 版本（支持 1.18-1.21，首次运行时可选择）
+  port: 25565                       # 游戏端口
+  max_players: 20                   # 最大玩家数
+  java_path: ""                     # JDK 路径（留空则自动检测）
+  jvm_args: "-Xmx4G -Xms2G"        # JVM 启动参数
+  server_jar: ""                    # 指定已有 JAR 路径（留空则自动下载）
+  auto_restart: true                # 崩溃后自动重启
+  restart_max_retries: 3            # 最大重启重试次数
+
+# Web 服务配置
+web:
+  admin_port: 8443                  # 管理后台端口（介绍页也在此端口）
+  session_timeout: 3600             # Session 过期时间（秒）
+  csrf_enabled: true
+  rate_limit: "10/minute"           # 登录频率限制
+  ssl_enabled: true                 # 启用 HTTPS（自动生成自签名证书）
+  ssl_cert: "config/certs/cert.pem" # SSL 证书路径
+  ssl_key: "config/certs/key.pem"   # SSL 私钥路径
+
+# 管理员账号（首次运行引导创建，BCrypt 哈希）
+admins:
+  - username: "admin"
+    password_hash: ""               # 首次运行时设置
+
+# 内网穿透配置
+tunnel:
+  server_addr: ""                   # frp 服务器地址
+  server_port: 7000                 # frp 服务器端口
+  token: ""                         # 标准 frp 认证令牌
+  protocol: "tcp"                   # tcp / udp / both
+  enabled_ports: ["mc_server", "mc_admin"]
+  # ── 樱花 Frp 专用 ──
+  user: ""                          # 樱花 Frp 用户 ID（非空 = 樱花模式）
+  sakura_mode: false
+  login_fail_exit: false
+  # ── 端口映射 ──
+  mapping:
+    mc_server:
+      local_port: 25565
+      remote_port: 25565
+      protocol: "tcp"
+      auth_pass: ""                 # 樱花 Frp：此代理的认证密码
+    mc_admin:
+      local_port: 8443
+      remote_port: 8443
+      protocol: "tcp"
+      auth_pass: ""                 # 樱花 Frp：此代理的认证密码
+
+# 世界配置（生成 server.properties）
+world:
+  level_name: "worlds/world"           # 活跃世界路径
+  seed: ""                             # 留空 = 随机种子
+  gamemode: "survival"                 # survival / creative / adventure / spectator
+  difficulty: "easy"                   # peaceful / easy / normal / hard
+  pvp: true
+  hardcore: false
+  spawn_protection: 16
+  max_players: 20
+  motd: "A Minecraft Server"
+  allow_nether: true
+  allow_end: true
+  enable_command_block: false
+  allow_flight: false
+  online_mode: true
+  view_distance: 10
+  simulation_distance: 10
