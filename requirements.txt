@@ -1,0 +1,40 @@
+# MC隧道控制器 - Python依赖
+# ==============================
+
+# Web框架
+flask>=3.0,<4.0
+flask-cors>=4.0
+
+# 认证与安全
+bcrypt>=4.1
+pyjwt>=2.8
+pyotp>=2.9           # TOTP（可选二因素认证）
+cryptography>=42.0    # X.509 证书生成（HTTPS 自签名）
+
+# 配置管理
+pyyaml>=6.0
+python-dotenv>=1.0
+
+# 日志
+loguru>=0.7
+
+# 进程管理
+psutil>=5.9
+
+# MC协议
+mcipc>=2.0           # RCON客户端
+mcstatus>=11.0       # Server List Ping
+
+# HTTP客户端（介绍页轮询等）
+requests>=2.31
+
+# 速率限制
+flask-limiter>=3.5
+
+# 打包（开发依赖）
+pyinstaller>=6.0     # 打包exe
+
+# 测试
+pytest>=8.0
+pytest-cov>=4.1
+tqdm>=4.66             # 下载进度条

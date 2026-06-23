@@ -1,0 +1,59 @@
+# Python virtual environment
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# VS
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# VS Code
+.vscode/
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# MC 服务端（运行时下载，不纳入仓库）
+server*.jar
+paper*.jar
+cache/
+eula.txt
+worlds/                          # 世界存档（统一管理）
+world/                           # 旧版世界目录（已迁移）
+world_nether/
+world_the_end/
+plugins/
+mods/
+server.properties
+banned-ips.json
+banned-players.json
+ops.json
+whitelist.json
+usercache.json
+
+# frp 二进制（运行时下载，不纳入仓库）
+frpc*
+frps*
+
+# 运行时生成
+config/config.yaml              # 用户本地配置
+config/certs/                   # 自签名 SSL 证书（首次启动自动生成）
+logs/
+
+# OS
+Thumbs.db
+.DS_Store
+Desktop.ini

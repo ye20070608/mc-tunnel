@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{data.intro.serverName}} — 管理面板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{url_for('static', filename='style.css')}}">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ============================================================
+       SIDEBAR
+       ============================================================ -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      ⛏ {{data.intro.serverName}}<br>
+      <small>MC 服务器穿透控制</small>
+    </div>
+    <nav class="sidebar-nav">
+      <label class="nav-item active" for="tab-overview">
+        📊 总览
+        <span class="nav-badge">{{data.server.onlinePlayers}}</span>
+      </label>
+      <label class="nav-item" for="tab-players">
+        👥 玩家管理
+      </label>
+      <label class="nav-item" for="tab-whitelist">
+        📋 白名单
+      </label>
+      <label class="nav-item" for="tab-logs">
+        📜 日志
+      </label>
+      <label class="nav-item" for="tab-console">
+        💻 控制台
+      </label>
+      <label class="nav-item" for="tab-servercenter">
+        🏠 服务器中心
+      </label>
+      <a class="nav-item" href="/setup" style="margin-top:4px;">
+        ⚙ 配置向导
+      </a>
+      <a class="nav-item" href="/login" style="margin-top:auto;">
+        🚪 退出登录
+      </a>
+    </nav>
+    <div class="sidebar-footer">v{{data.server.version}}</div>
+  </aside>
+
+  <!-- ============================================================
+       MAIN AREA
+       ============================================================ -->
+  <main class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <span class="topbar-title">管理面板</span>
+      <div class="topbar-status">
+        {% if data.server.status == 'running' %}
+        <span class="pill pill-success">服务器运行中</span>
+        {% else %}
+        <span class="pill pill-danger">服务器已停止</span>
+        {% endif %}
+        <a class="btn btn-secondary btn-sm" href="/login">退出</a>
+      </div>
+    </div>
+
+    <!-- Hidden tab radios -->
+    <input class="tab-radio" type="radio" name="tab" id="tab-overview" checked>
+    <input class="tab-radio" type="radio" name="tab" id="tab-players">
+    <input class="tab-radio" type="radio" name="tab" id="tab-whitelist">
+    <input class="tab-radio" type="radio" name="tab" id="tab-logs">
+    <input class="tab-radio" type="radio" name="tab" id="tab-console">
+    <input class="tab-radio" type="radio" name="tab" id="tab-servercenter">
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <label class="tab-label tab-overview" for="tab-overview">总览</label>
+      <label class="tab-label tab-players" for="tab-players">玩家管理</label>
+      <label class="tab-label tab-whitelist" for="tab-whitelist">白名单</label>
+      <label class="tab-label tab-logs" for="tab-logs">日志</label>
+      <label class="tab-label tab-console" for="tab-console">控制台</label>
+      <label class="tab-label tab-servercenter" for="tab-servercenter">服务器中心</label>
+    </div>
+
+    <div class="content">
+
+      <!-- ============================================================
+           TAB: OVERVIEW
+           ============================================================ -->
+      <div class="tab-panel tab-overview" id="panel-overview">
+
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-val">{{data.server.onlinePlayers}}<small>/{{data.server.maxPlayers}}</small></div>
+            <div class="stat-lbl">在线玩家</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val">{{data.server.tps}}</div>
+            <div class="stat-lbl">TPS</div>
+          </div>
+          <div class="stat-card {% if data.server.memory.percent > 80 %}danger{% elif data.server.memory.percent > 60 %}warn{% endif %}">
+            <div class="stat-val">{{data.server.memory.percent}}%</div>
+            <div class="stat-lbl">内存 ({{data.server.memory.used}}/{{data.server.memory.max}})</div>
+            <div class="progress-bar {% if data.server.memory.percent > 80 %}danger{% elif data.server.memory.percent > 60 %}warn{% endif %}">
+              <div class="fill" style="width:{{data.server.memory.percent}}%;"></div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val">{{data.server.uptime}}</div>
+            <div class="stat-lbl">运行时间</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val">{{data.server.cpu}}</div>
+            <div class="stat-lbl">CPU 使用</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val">{{data.tunnel.activeTunnels}}</div>
+            <div class="stat-lbl">穿透隧道</div>
+          </div>
+        </div>
+
+        <!-- Server controls -->
+        <div class="btn-row" id="server-actions">
+          <button class="btn btn-success" data-action="start" id="btn-start" style="display:none;">▶ 启动服务器</button>
+          <button class="btn btn-primary" data-action="stop" id="btn-stop">⏸ 停止服务器</button>
+          <button class="btn btn-secondary" data-action="restart" id="btn-restart">🔄 重启服务器</button>
+        </div>
+
+        <!-- Tunnel status -->
+        <div class="card-header" style="margin-top:24px;">穿透隧道状态</div>
+        <div id="tunnel-mappings-table">
+          <div class="empty-state"><p>加载中...</p></div>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:8px;" id="tunnel-server-info">
+          穿透服务器: <code>--</code> · 连接时长: --
+        </p>
+        <div style="margin-top:10px;display:flex;gap:8px;">
+          <button class="btn btn-success" id="btn-frp-start" onclick="frpcStart()">▶ 启动穿透</button>
+          <button class="btn btn-danger" id="btn-frp-stop" onclick="frpcStop()" style="display:none;">⏹ 停止穿透</button>
+          <span id="frpc-action-msg" style="font-size:11px;color:var(--muted);align-self:center;"></span>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           TAB: PLAYERS
+           ============================================================ -->
+      <div class="tab-panel tab-players" id="panel-players">
+
+        <div class="card-header">在线玩家 ({{data.server.onlinePlayers}}/{{data.server.maxPlayers}})</div>
+        {% if data.players and data.players|length > 0 %}
+        <table class="data-table">
+          <thead>
+            <tr><th>玩家名</th><th>延迟</th><th>游戏模式</th><th>加入时间</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            {% for player in data.players %}
+            <tr>
+              <td>🧑 {{player.name}}</td>
+              <td class="mono">{{player.ping}}ms</td>
+              <td>{{player.gamemode}}</td>
+              <td>{{player.joined}}</td>
+              <td><a class="btn btn-danger btn-xs" href="#modal-kick-{{loop.index0}}">踢出</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <p>暂无在线玩家</p>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- ============================================================
+           TAB: WHITELIST
+           ============================================================ -->
+      <div class="tab-panel tab-whitelist" id="panel-whitelist">
+
+        <div class="btn-row">
+          <a class="btn btn-primary btn-sm" href="#modal-whitelist-add">+ 添加玩家</a>
+          <button class="btn btn-secondary btn-sm" onclick="showToast('reload')">🔄 重载白名单</button>
+        </div>
+        {% if data.whitelist and data.whitelist|length > 0 %}
+        <table class="data-table">
+          <thead>
+            <tr><th>玩家名</th><th>添加日期</th><th>操作人</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            {% for entry in data.whitelist %}
+            <tr>
+              <td>🧑 {{entry.name}}</td>
+              <td>{{entry.added}}</td>
+              <td>{{entry.by}}</td>
+              <td><a class="btn btn-danger btn-xs" href="#modal-whitelist-remove-{{loop.index0}}">移除</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <p>白名单为空</p>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- ============================================================
+           TAB: LOGS
+           ============================================================ -->
+      <div class="tab-panel tab-logs" id="panel-logs">
+
+        <div class="btn-row">
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('log-viewer').scrollTop=0;">🔄 刷新</button>
+          <button class="btn btn-secondary btn-sm" onclick="showToast('export')">📥 导出日志</button>
+          <button class="btn btn-danger btn-sm" onclick="showToast('clear')">🗑 清空日志</button>
+        </div>
+
+        <div class="card-header">服务器日志</div>
+        <div class="log-viewer" id="log-viewer">
+          {% if data.logs and data.logs|length > 0 %}
+            {% for log in data.logs %}
+            <div class="log-line">
+              <span class="time">{{log.time}}</span>
+              <span class="level {{log.level}}">{{log.level}}</span>
+              <span class="msg">{{log.message}}</span>
+            </div>
+            {% endfor %}
+          {% else %}
+          <div class="empty-state" style="padding:20px;">
+            <p>暂无日志</p>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Operation logs -->
+        {% if data.operationLogs and data.operationLogs|length > 0 %}
+        <div class="card-header" style="margin-top:24px;">操作日志</div>
+        <table class="data-table">
+          <thead>
+            <tr><th>时间</th><th>操作人</th><th>IP</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            {% for log in data.operationLogs %}
+            <tr>
+              <td class="mono">{{log.time}}</td>
+              <td>{{log.operator}}</td>
+              <td class="mono">{{log.ip}}</td>
+              <td>{{log.action}}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+
+      <!-- ============================================================
+           TAB: CONSOLE
+           ============================================================ -->
+      <div class="tab-panel tab-console" id="panel-console">
+
+        <div class="card-header">服务器控制台</div>
+        <div class="console-input-row">
+          <input class="input" type="text" id="console-command"
+                 placeholder="输入指令，如 list、say Hello、tps..."
+                 autocomplete="off">
+          <button class="btn btn-primary" id="console-send-btn" onclick="sendCommand()">▶ 发送</button>
+        </div>
+
+        <div class="log-viewer" id="console-viewer">
+          <div class="empty-state" style="padding:20px;">
+            <p>服务器未启动或暂无输出</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ============================================================
+           TAB: SERVER CENTER
+           ============================================================ -->
+      <div class="tab-panel tab-servercenter" id="panel-servercenter">
+
+        <!-- Server Control Card -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header">🖥 服务器控制</div>
+          <div class="server-info-grid" id="server-info-grid">
+            <div class="info-item"><span class="info-label">状态</span><span class="info-val" id="sc-status">--</span></div>
+            <div class="info-item"><span class="info-label">局域网地址</span><span class="info-val mono" id="sc-ip">--</span></div>
+            <div class="info-item"><span class="info-label">游戏端口</span><span class="info-val mono" id="sc-port">--</span></div>
+            <div class="info-item"><span class="info-label">MC 版本</span><span class="info-val" id="sc-version">--</span></div>
+            <div class="info-item"><span class="info-label">活跃世界</span><span class="info-val" id="sc-world">--</span></div>
+            <div class="info-item"><span class="info-label">在线模式</span><span class="info-val" id="sc-online">--</span> <a href="#" style="font-size:11px;color:var(--accent);" onclick="toggleOnlineMode();return false;">[切换]</a></div>
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
+            <button class="btn btn-success" data-action="start" id="sc-btn-start">▶ 启动</button>
+            <button class="btn btn-primary" data-action="stop" id="sc-btn-stop">⏸ 停止</button>
+            <button class="btn btn-secondary" data-action="restart" id="sc-btn-restart">🔄 重启</button>
+          </div>
+        </div>
+
+        <!-- Version Management -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header">📦 版本管理</div>
+          <div class="field">
+            <label>已安装版本</label>
+            <div class="version-list" id="version-list">
+              <div class="empty-state"><p>加载中...</p></div>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-secondary btn-sm" onclick="downloadNewVersion()">⬇ 下载新版本</button>
+          </div>
+        </div>
+
+        <!-- World Management -->
+        <div class="card">
+          <div class="card-header">🌍 世界管理</div>
+          <div class="world-grid" id="world-grid">
+            <div class="empty-state"><p>加载中...</p></div>
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
+            <button class="btn btn-primary btn-sm" onclick="showCreateWorldModal()">+ 新建世界</button>
+          </div>
+        </div>
+
+        <!-- Create World Modal -->
+        <div class="modal-overlay" id="modal-create-world">
+          <div class="modal-box">
+            <h3>🌍 新建世界</h3>
+            <div class="field">
+              <label for="new-world-name">世界名称（目录名）</label>
+              <input class="input" id="new-world-name" placeholder="例如：creative_world">
+            </div>
+            <div class="modal-actions">
+              <a class="modal-close" href="#panel-servercenter">取消</a>
+              <button class="btn btn-primary btn-sm" onclick="createWorld()">创建</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Download Version Modal -->
+        <div class="modal-overlay" id="modal-download-version">
+          <div class="modal-box">
+            <h3>⬇ 下载新版本</h3>
+            <div class="field">
+              <label for="remote-version-select">选择 PaperMC 版本</label>
+              <select class="input" id="remote-version-select">
+                <option value="">加载中...</option>
+              </select>
+            </div>
+            <!-- Progress bar (hidden initially) -->
+            <div id="download-progress-area" style="display:none;margin:12px 0;">
+              <div style="font-size:11px;margin-bottom:4px;color:var(--accent);" id="download-progress-phase"></div>
+              <div class="progress-bar" style="height:20px;">
+                <div class="fill" id="download-progress-fill" style="width:0%;"></div>
+              </div>
+              <div class="progress-label">
+                <span id="download-progress-text">0%</span>
+                <span id="download-progress-mb">0 / 0 MB</span>
+              </div>
+            </div>
+            <p style="font-size:11px;color:var(--muted);" id="download-hint">下载可能需要几分钟，请耐心等待。</p>
+            <div class="modal-actions">
+              <a class="modal-close" href="#panel-servercenter" id="download-cancel-link">取消</a>
+              <button class="btn btn-primary btn-sm" id="btn-download-version" onclick="downloadVersion()">开始下载</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div><!-- .content -->
+  </main>
+</div><!-- .app-shell -->
+
+<!-- ============================================================
+     MODALS
+     ============================================================ -->
+
+<!-- Kick modals (one per player) -->
+{% if data.players and data.players|length > 0 %}
+  {% for player in data.players %}
+  <div class="modal-overlay" id="modal-kick-{{loop.index0}}">
+    <div class="modal-box">
+      <h3>⚠ 确认踢出玩家</h3>
+      <p>确定要将 <strong>{{player.name}}</strong> 踢出服务器吗？此操作不可撤销。</p>
+      <div class="modal-actions">
+        <a class="modal-close" href="#panel-players">取消</a>
+        <a class="btn btn-danger btn-sm modal-confirm" data-player="{{player.name}}" style="text-decoration:none;">确认踢出</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% endif %}
+
+<!-- Whitelist add modal -->
+<div class="modal-overlay" id="modal-whitelist-add">
+  <div class="modal-box">
+    <h3>+ 添加白名单</h3>
+    <div class="field">
+      <label>玩家名</label>
+      <input class="input" id="whitelist-name" placeholder="输入 Minecraft 玩家名">
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <a class="modal-close" href="#panel-whitelist">取消</a>
+      <a class="btn btn-primary btn-sm modal-confirm-whitelist-add" style="text-decoration:none;" onclick="event.preventDefault(); window.whitelistAdd(document.getElementById('whitelist-name').value.trim());">添加</a>
+    </div>
+  </div>
+</div>
+
+<!-- Whitelist remove modals -->
+{% if data.whitelist and data.whitelist|length > 0 %}
+  {% for entry in data.whitelist %}
+  <div class="modal-overlay" id="modal-whitelist-remove-{{loop.index0}}">
+    <div class="modal-box">
+      <h3>⚠ 确认移除</h3>
+      <p>确定要将 <strong>{{entry.name}}</strong> 移出白名单吗？</p>
+      <div class="modal-actions">
+        <a class="modal-close" href="#panel-whitelist">取消</a>
+        <a class="btn btn-danger btn-sm modal-confirm" data-player="{{entry.name}}" style="text-decoration:none;">确认移除</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% endif %}
+
+<!-- ============================================================
+     TOAST NOTIFICATIONS
+     ============================================================ -->
+<div class="toast" id="toast-stopped" style="border-color:var(--danger);">⏸ 服务器已停止</div>
+<div class="toast" id="toast-restart" style="border-color:var(--warning);">🔄 服务器正在重启...</div>
+<div class="toast" id="toast-backup">💾 备份任务已加入队列</div>
+<div class="toast" id="toast-kicked" style="border-color:var(--danger);">👢 玩家已被踢出</div>
+<div class="toast" id="toast-added">✅ 白名单已添加</div>
+<div class="toast" id="toast-removed" style="border-color:var(--danger);">🗑 白名单已移除</div>
+<div class="toast" id="toast-reload">🔄 白名单已重新加载</div>
+<div class="toast" id="toast-export">📥 日志已导出到文件</div>
+<div class="toast" id="toast-clear" style="border-color:var(--danger);">🗑 日志已清空</div>
+
+<script>
+/**
+ * Show a toast notification by ID.
+ * Uses the :target pseudo-class to fade in the toast element.
+ */
+function showToast(id) {
+  const toast = document.getElementById('toast-' + id);
+  if (!toast) return;
+
+  // Remove any existing hash
+  if (window.location.hash) {
+    window.location.hash = '';
+  }
+
+  // Set hash to show toast
+  setTimeout(function() {
+    window.location.hash = 'toast-' + id;
+  }, 10);
+
+  // Auto-hide after 3 seconds
+  setTimeout(function() {
+    window.location.hash = '';
+  }, 3000);
+}
+</script>
+<script src="{{url_for('static', filename='app.js')}}"></script>
+
+</body>
+</html>

@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{data.intro.serverName}} — 配置向导</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{url_for('static', filename='style.css')}}">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      ⛏ {{data.intro.serverName}}<br>
+      <small>MC 服务器穿透控制</small>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="nav-item" href="/dashboard">
+        📊 总览
+        <span class="nav-badge">{{data.server.onlinePlayers}}</span>
+      </a>
+      <a class="nav-item" href="/dashboard#panel-players">
+        👥 玩家管理
+      </a>
+      <a class="nav-item" href="/dashboard#panel-whitelist">
+        📋 白名单
+      </a>
+      <a class="nav-item" href="/dashboard#panel-logs">
+        📜 日志
+      </a>
+      <a class="nav-item active" href="/setup">
+        ⚙ 配置向导
+      </a>
+      <a class="nav-item" href="/login" style="margin-top:auto;">
+        🚪 退出登录
+      </a>
+    </nav>
+    <div class="sidebar-footer">v{{data.server.version}}</div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <span class="topbar-title">配置向导</span>
+      <div class="topbar-status">
+        {% if data.server.status == 'running' %}
+        <span class="pill pill-success">服务器运行中</span>
+        {% else %}
+        <span class="pill pill-danger">服务器已停止</span>
+        {% endif %}
+        <a class="btn btn-secondary btn-sm" href="/dashboard">← 返回管理</a>
+      </div>
+    </div>
+
+    <!-- Setup content -->
+    <div class="content setup-view">
+      <div class="setup-box">
+
+        <!-- Setup step radios -->
+        <input class="setup-radio" type="radio" name="setup-step" id="setup-step1" checked>
+        <input class="setup-radio" type="radio" name="setup-step" id="setup-step2">
+        <input class="setup-radio" type="radio" name="setup-step" id="setup-step3">
+        <input class="setup-radio" type="radio" name="setup-step" id="setup-step4">
+        <input class="setup-radio" type="radio" name="setup-step" id="setup-step5">
+
+        <!-- Progress bar -->
+        <div class="setup-progress">
+          <label class="sp-1" for="setup-step1"></label>
+          <label class="sp-2" for="setup-step2"></label>
+          <label class="sp-3" for="setup-step3"></label>
+          <label class="sp-4" for="setup-step4"></label>
+          <label class="sp-5" for="setup-step5"></label>
+        </div>
+
+        <div class="setup-panels">
+
+          <!-- Step 1: Welcome -->
+          <div class="setup-panel sp1 card">
+            <h2>⛏ 欢迎使用 MC 服务器穿透控制</h2>
+            <p class="desc">此向导将帮助您完成首次配置：MC 服务端参数、内网穿透、管理员账号。已有服务端 JAR？可跳过下载。</p>
+            <p class="desc" style="color:var(--warning);">⚠ 自动下载 MC 服务端需同意 Mojang EULA 协议。</p>
+            <div class="setup-nav-row">
+              <span></span>
+              <div class="right">
+                <label class="step-link next" for="setup-step2">开始配置 →</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: MC Config -->
+          <div class="setup-panel sp2 card">
+            <h2>⚙ MC 服务端配置</h2>
+            <p class="desc">设置 Minecraft 服务端基本参数。</p>
+            <div class="field">
+              <label for="mc-version">MC 版本</label>
+              <select class="input" id="mc-version">
+                <option value="">加载中...</option>
+              </select>
+              <span class="hint">自动从 PaperMC 获取最新版本列表</span>
+            </div>
+            <div class="field">
+              <label for="mc-port">服务端口</label>
+              <input class="input" id="mc-port" value="{{data.config.mcPort}}">
+            </div>
+            <div class="field">
+              <label for="max-players">最大玩家数</label>
+              <input class="input" id="max-players" value="{{data.config.maxPlayers}}">
+            </div>
+            <div class="field">
+              <label for="gamemode">游戏模式</label>
+              <select class="input" id="gamemode">
+                <option value="survival">生存 (Survival)</option>
+                <option value="creative">创造 (Creative)</option>
+                <option value="adventure">冒险 (Adventure)</option>
+                <option value="spectator">旁观 (Spectator)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="difficulty">难度</label>
+              <select class="input" id="difficulty">
+                <option value="peaceful">和平 (Peaceful)</option>
+                <option value="easy" selected>简单 (Easy)</option>
+                <option value="normal">普通 (Normal)</option>
+                <option value="hard">困难 (Hard)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="world-seed">世界种子</label>
+              <input class="input" id="world-seed" placeholder="留空则随机生成世界">
+            </div>
+            <div class="field">
+              <label for="server-motd">服务器 MOTD</label>
+              <input class="input" id="server-motd" value="A Minecraft Server" placeholder="服务器描述文字">
+            </div>
+            <div class="field">
+              <label for="jvm-args">JVM 启动参数</label>
+              <input class="input" id="jvm-args" value="{{data.config.jvmArgs}}">
+            </div>
+            <div class="field field-row">
+              <label class="toggle">
+                <input type="checkbox" id="auto-restart" {% if data.config.autoRestart %}checked{% endif %}>
+                <span class="track"><span class="thumb"></span></span>
+              </label>
+              <span style="font-size:13px;">崩溃后自动重启</span>
+            </div>
+            <div class="setup-nav-row">
+              <label class="step-link prev" for="setup-step1">← 上一步</label>
+              <div class="right">
+                <label class="step-link next" for="setup-step3">下一步 →</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Tunnel Config -->
+          <div class="setup-panel sp3 card">
+            <h2>🌐 内网穿透配置</h2>
+            <p class="desc">配置 frp 穿透服务器信息和端口映射。留空则跳过穿透。</p>
+
+            <!-- Mode selector -->
+            <div class="field">
+              <label>穿透模式</label>
+              <select class="input" id="frp-mode" onchange="tglSakura()">
+                <option value="standard">标准 frp（Token 认证）</option>
+                <option value="sakura">樱花 Frp（用户 ID 认证）</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="frp-server">frp 服务器地址</label>
+              <input class="input" id="frp-server" placeholder="例如 frp-way.com">
+            </div>
+            <div class="field">
+              <label for="frp-port">frp 服务器端口</label>
+              <input class="input" id="frp-port" value="7000">
+            </div>
+
+            <!-- Standard mode fields -->
+            <div id="frp-standard-fields">
+              <div class="field">
+                <label for="frp-token">认证令牌 (Token)</label>
+                <input class="input" id="frp-token" type="password" placeholder="标准 frp 的 token">
+              </div>
+            </div>
+
+            <!-- Sakura mode fields -->
+            <div id="frp-sakura-fields" style="display:none;">
+              <div class="field">
+                <label for="frp-user">用户 ID (User)</label>
+                <input class="input" id="frp-user" placeholder="樱花 Frp 用户 ID，例如 vyaogq...">
+              </div>
+            </div>
+
+            <!-- Paste config shortcut -->
+            <div style="margin-top:16px;padding:12px;background:var(--bg);border:2px dashed var(--border);border-radius:8px;">
+              <p style="font-size:12px;margin:0 0 8px;">📋 粘贴 frpc 配置自动填充（支持标准 frp / 樱花 Frp）</p>
+              <textarea id="frp-paste" class="input" style="height:120px;font-family:var(--font-mono);font-size:10px;resize:vertical;"
+                placeholder="粘贴 frpc.ini 或 frpc.toml 内容，点击&#34;解析配置&#34;自动填充所有字段。&#10;例如：&#10;[common]&#10;server_addr = frp-way.com&#10;server_port = 8088&#10;user = vyaogqjrr72yky0wbd8f8mpg2f3v7eni&#10;&#10;[mc]&#10;type = tcp&#10;local_port = 25565&#10;remote_port = 35374&#10;auth_pass = 123"></textarea>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="parseFrpConfig()" style="margin-top:6px;">🔍 解析配置</button>
+              <span id="frp-parse-msg" style="font-size:10px;color:var(--success);margin-left:8px;display:none;"></span>
+            </div>
+
+            <p style="font-size:11px;color:var(--muted);margin:12px 0;">端口映射（每个端口可独立配置 remote_port 和 auth_pass）：</p>
+            <table class="data-table">
+              <thead>
+                <tr><th>用途</th><th>本地端口</th><th>公网端口</th><th>auth_pass</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>MC 游戏</td>
+                  <td class="mono">{{data.config.mcPort}}</td>
+                  <td><input class="input" id="frp-mc_server-remote" value="25565" style="width:80px;text-align:center;"></td>
+                  <td><input class="input" id="frp-mc_server-auth" type="password" placeholder="樱花代理密码" style="width:110px;"></td>
+                </tr>
+                <tr>
+                  <td>管理后台</td>
+                  <td class="mono">{{data.config.adminPort}}</td>
+                  <td><input class="input" id="frp-mc_admin-remote" value="8443" style="width:80px;text-align:center;"></td>
+                  <td><input class="input" id="frp-mc_admin-auth" type="password" placeholder="樱花代理密码" style="width:110px;"></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="setup-nav-row">
+              <label class="step-link prev" for="setup-step2">← 上一步</label>
+              <div class="right">
+                <label class="step-link next" for="setup-step4">下一步 →</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: Admin Account -->
+          <div class="setup-panel sp4 card">
+            <h2>🔐 创建管理员账号</h2>
+            <p class="desc">设置管理后台的登录凭据（密码使用 BCrypt 加密存储）。</p>
+            <div class="field">
+              <label for="admin-user">管理员用户名</label>
+              <input class="input" id="admin-user" value="admin">
+            </div>
+            <div class="field">
+              <label for="admin-pass">密码</label>
+              <input class="input" id="admin-pass" type="password" value="">
+            </div>
+            <div class="field">
+              <label for="admin-pass-confirm">确认密码</label>
+              <input class="input" id="admin-pass-confirm" type="password" value="">
+            </div>
+            <div class="field">
+              <label for="session-timeout">会话超时（秒）</label>
+              <input class="input" id="session-timeout" value="{{data.config.sessionTimeout}}">
+            </div>
+            <div class="setup-nav-row">
+              <label class="step-link prev" for="setup-step3">← 上一步</label>
+              <div class="right">
+                <label class="step-link next" for="setup-step5">下一步 →</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 5: Summary -->
+          <div class="setup-panel sp5 card">
+            <h2>✅ 配置完成！</h2>
+            <p class="desc">所有设置已保存。点击下方按钮一键启动所有服务。</p>
+            <div style="background:var(--bg);border:2px solid var(--border);padding:16px;margin-bottom:16px;">
+              <p style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">
+                ✓ MC 服务端: {{data.server.version}}, 端口 {{data.config.mcPort}}, 最大 {{data.config.maxPlayers}} 人<br>
+                ✓ 穿透节点: {{data.tunnel.server}} (TCP×2)<br>
+                ✓ 自动重启: {% if data.config.autoRestart %}开启{% else %}关闭{% endif %}
+              </p>
+            </div>
+            <p class="desc" style="color:var(--warning);">⚠ 首次启动将自动下载 MC 服务端核心。请阅读并确认 Mojang EULA。</p>
+            <div class="field field-row">
+              <label class="toggle">
+                <input type="checkbox" id="eula-agree">
+                <span class="track"><span class="thumb"></span></span>
+              </label>
+              <span style="font-size:13px;">我已阅读并同意 Mojang EULA</span>
+            </div>
+            <div class="setup-nav-row">
+              <label class="step-link prev" for="setup-step4">← 上一步</label>
+              <div class="right">
+                <button class="step-link launch" onclick="launchServer()">🚀 一键启动</button>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- .setup-panels -->
+      </div><!-- .setup-box -->
+    </div><!-- .content -->
+
+  </main>
+</div><!-- .app-shell -->
+
+<script>
+/**
+ * 页面加载时动态填充 PaperMC 版本下拉列表。
+ */
+async function loadVersions() {
+  const select = document.getElementById('mc-version');
+  if (!select) return;
+
+  try {
+    const resp = await fetch('/api/public/versions');
+    const data = await resp.json();
+    const versions = data.versions || [];
+    const current = data.current || '1.20.1';
+    const recommended = data.recommended || [];
+
+    select.innerHTML = '';
+    versions.forEach(v => {
+      const option = document.createElement('option');
+      option.value = v;
+      const labels = [];
+      if (v === current) labels.push('当前');
+      if (recommended.includes(v)) labels.push('推荐');
+      option.textContent = v + (labels.length ? ' (' + labels.join('/') + ')' : '');
+      if (v === current) option.selected = true;
+      select.appendChild(option);
+    });
+  } catch (err) {
+    // 离线降级
+    select.innerHTML = '';
+    ['1.21','1.20.6','1.20.1','1.20.4','1.19.4','1.18.2'].forEach(v => {
+      const option = document.createElement('option');
+      option.value = v;
+      option.textContent = v;
+      if (v === '1.20.1') option.selected = true;
+      select.appendChild(option);
+    });
+  }
+}
+
+// 页面加载时执行
+document.addEventListener('DOMContentLoaded', loadVersions);
+
+/**
+ * Handle the "一键启动" action from step 5.
+ * Validates EULA agreement, fetches CSRF token, validates admin credentials
+ * via the login API, and redirects to the dashboard.
+ */
+async function launchServer() {
+  const eulaCheck = document.getElementById('eula-agree');
+  if (!eulaCheck.checked) {
+    alert('请先阅读并同意 Mojang EULA');
+    return;
+  }
+
+  // Collect all config values
+  const config = {
+    mc: {
+      version: document.getElementById('mc-version')?.value || '1.20.1',
+      port: parseInt(document.getElementById('mc-port')?.value || '25565'),
+      max_players: parseInt(document.getElementById('max-players')?.value || '20'),
+      jvm_args: document.getElementById('jvm-args')?.value || '-Xmx4G -Xms2G',
+      auto_restart: document.getElementById('auto-restart')?.checked || false,
+    },
+    world: {
+      gamemode: document.getElementById('gamemode')?.value || 'survival',
+      difficulty: document.getElementById('difficulty')?.value || 'easy',
+      seed: document.getElementById('world-seed')?.value || '',
+      motd: document.getElementById('server-motd')?.value || 'A Minecraft Server',
+    },
+    tunnel: {
+      mode: document.getElementById('frp-mode')?.value || 'standard',
+      server_addr: document.getElementById('frp-server')?.value || '',
+      server_port: parseInt(document.getElementById('frp-port')?.value || '7000'),
+      token: document.getElementById('frp-token')?.value || '',
+      user: document.getElementById('frp-user')?.value || '',
+      mapping: {
+        mc_server: {
+          remote_port: parseInt(document.getElementById('frp-mc_server-remote')?.value || '25565'),
+          auth_pass: document.getElementById('frp-mc_server-auth')?.value || '',
+        },
+        mc_admin: {
+          remote_port: parseInt(document.getElementById('frp-mc_admin-remote')?.value || '8443'),
+          auth_pass: document.getElementById('frp-mc_admin-auth')?.value || '',
+        },
+      },
+    },
+    admin: {
+      username: document.getElementById('admin-user')?.value || 'admin',
+      password: document.getElementById('admin-pass')?.value || '',
+      session_timeout: parseInt(document.getElementById('session-timeout')?.value || '3600'),
+    },
+    eula_accepted: true,
+  };
+
+  // Show loading state
+  const launchBtn = document.querySelector('.step-link.launch');
+  if (launchBtn) {
+    launchBtn.disabled = true;
+    launchBtn.textContent = '⏳ 配置中...';
+  }
+
+  try {
+    // Step 1: Fetch CSRF token
+    const csrfResp = await fetch('/api/admin/csrf-token');
+    const csrfData = await csrfResp.json();
+    const csrfToken = csrfData.csrf_token || '';
+
+    // Step 2: Validate admin credentials by attempting login
+    const loginResp = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({
+        username: config.admin.username,
+        password: config.admin.password,
+      }),
+    });
+
+    const loginData = await loginResp.json();
+
+    if (!loginResp.ok) {
+      alert('管理员账号验证失败: ' + (loginData.message || '请检查用户名和密码'));
+      return;
+    }
+
+    // Store the JWT so the user is logged in after redirect
+    if (loginData.token) {
+      try {
+        sessionStorage.setItem('mc_jwt', loginData.token);
+      } catch (_e) { /* ignore */ }
+    }
+
+    // Step 3: Save configuration
+    const saveResp = await fetch('/api/admin/save-config', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-Token': csrfToken,
+        'Authorization': 'Bearer ' + loginData.token,
+      },
+      body: JSON.stringify(config),
+    });
+    const saveData = await saveResp.json();
+    if (!saveResp.ok) {
+      alert('配置保存失败: ' + (saveData.message || '请检查输入'));
+      if (launchBtn) { launchBtn.disabled = false; launchBtn.textContent = '🚀 一键启动'; }
+      return;
+    }
+
+    // Step 4: Redirect to dashboard
+    window.location.href = '/dashboard';
+  } catch (err) {
+    alert('配置过程发生网络错误: ' + (err.message || '请检查服务器连接'));
+  } finally {
+    if (launchBtn) {
+      launchBtn.disabled = false;
+      launchBtn.textContent = '🚀 一键启动';
+    }
+  }
+}
+
+/**
+ * Parse a pasted frpc config (INI format) and auto-fill all tunnel fields.
+ * Supports both standard frp (token) and Sakura Frp (user + auth_pass).
+ */
+function parseFrpConfig() {
+  var text = document.getElementById('frp-paste').value.trim();
+  var msg = document.getElementById('frp-parse-msg');
+  if (!text) {
+    if (msg) { msg.textContent = '请先粘贴 frpc 配置内容'; msg.style.color = 'var(--danger)'; msg.style.display = ''; }
+    return;
+  }
+
+  // Parse INI-style config: strip comments, find sections and key=value pairs
+  var sections = {};
+  var currentSection = 'common';  // keys before any [section] go to common
+  var lines = text.split(/\r?\n/);
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    // Skip empty lines and comments (# or ;)
+    if (!line || line[0] === '#' || line[0] === ';') continue;
+    // Section header
+    var secMatch = line.match(/^\[(.+)\]$/);
+    if (secMatch) {
+      currentSection = secMatch[1].trim();
+      if (!sections[currentSection]) sections[currentSection] = {};
+      continue;
+    }
+    // Key = value
+    var eqIdx = line.indexOf('=');
+    if (eqIdx === -1) continue;
+    var key = line.substring(0, eqIdx).trim();
+    var val = line.substring(eqIdx + 1).trim();
+    // Remove inline comments from value
+    var commentIdx = val.indexOf('#');
+    if (commentIdx !== -1) val = val.substring(0, commentIdx).trim();
+    // Remove quotes
+    if ((val[0] === '"' && val[val.length - 1] === '"') || (val[0] === "'" && val[val.length - 1] === "'")) {
+      val = val.substring(1, val.length - 1);
+    }
+    if (!sections[currentSection]) sections[currentSection] = {};
+    sections[currentSection][key] = val;
+  }
+
+  var common = sections['common'] || {};
+
+  // Detect mode: Sakura if 'user' key present, otherwise standard
+  var isSakura = !!common['user'];
+  var modeSelect = document.getElementById('frp-mode');
+  if (modeSelect) {
+    modeSelect.value = isSakura ? 'sakura' : 'standard';
+    tglSakura();  // toggle visibility of mode-specific fields
+  }
+
+  // Fill common fields
+  if (common['server_addr']) setVal('frp-server', common['server_addr']);
+  if (common['server_port']) setVal('frp-port', common['server_port']);
+  if (common['token'])       setVal('frp-token', common['token']);
+  if (common['user'])        setVal('frp-user', common['user']);
+
+  // Fill per-proxy fields from parsed sections
+  fillProxyFields('mc_server', sections, common);
+  fillProxyFields('mc_admin', sections, common);
+
+  if (msg) {
+    msg.textContent = '✓ 已解析: ' + (isSakura ? '樱花' : '标准') + ' frp，请核对端口映射';
+    msg.style.color = 'var(--success)';
+    msg.style.display = '';
+  }
+}
+
+/** Helper: set input/select value if element exists and value is truthy */
+function setVal(id, value) {
+  var el = document.getElementById(id);
+  if (el && value) { el.value = value; }
+}
+
+/** Fill per-proxy remote_port and auth_pass from parsed config */
+function fillProxyFields(key, sections, common) {
+  var sec = sections[key];
+  if (!sec) return;
+  setVal('frp-' + key + '-remote', sec['remote_port']);
+  // Per-proxy auth_pass takes priority, fall back to common
+  setVal('frp-' + key + '-auth', sec['auth_pass'] || common['auth_pass'] || '');
+}
+
+function tglSakura() {
+  var mode = document.getElementById('frp-mode');
+  var stdFields = document.getElementById('frp-standard-fields');
+  var skFields = document.getElementById('frp-sakura-fields');
+  if (!mode || !stdFields || !skFields) return;
+  if (mode.value === 'sakura') {
+    stdFields.style.display = 'none';
+    skFields.style.display = '';
+  } else {
+    stdFields.style.display = '';
+    skFields.style.display = 'none';
+  }
+}
+</script>
+<script src="{{url_for('static', filename='app.js')}}"></script>
+
+</body>
+</html>

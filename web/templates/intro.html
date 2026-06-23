@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{data.intro.serverName}} — MC 服务器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{url_for('static', filename='style.css')}}">
+<style>
+  /* Intro page is standalone (no sidebar), so body is scrollable */
+  html, body { overflow-y: auto; height: auto; min-height: 100vh; }
+  body { display: flex; flex-direction: column; }
+  .intro-wrapper { flex: 1; display: flex; flex-direction: column; }
+</style>
+</head>
+<body>
+
+<div class="intro-wrapper">
+
+  <!-- Hero -->
+  <div class="intro-hero">
+    <h1>⛏ {{data.intro.serverName}}</h1>
+    {% if data.intro.slogan %}
+    <p class="slogan">{{data.intro.slogan}}</p>
+    {% endif %}
+    <div class="intro-stats">
+      <div class="intro-stat">
+        <div class="val">{{data.server.onlinePlayers}}<small>/{{data.server.maxPlayers}}</small></div>
+        <div class="lbl">在线玩家</div>
+      </div>
+      <div class="intro-stat">
+        <div class="val">{{data.server.version}}</div>
+        <div class="lbl">游戏版本</div>
+      </div>
+      <div class="intro-stat">
+        <div class="val">生存</div>
+        <div class="lbl">游戏模式</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- About -->
+  {% if data.intro.description %}
+  <div class="intro-section">
+    <h2>📖 关于我们</h2>
+    <p style="font-size:14px;color:var(--muted);line-height:1.8;">{{data.intro.description}}</p>
+  </div>
+  {% endif %}
+
+  <!-- Rules -->
+  {% if data.intro.rules %}
+  <div class="intro-section">
+    <h2>📜 服务器规则</h2>
+    <ul class="intro-rules">
+      {% for rule in data.intro.rules %}
+      <li>{{rule}}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <!-- Features -->
+  {% if data.intro.features %}
+  <div class="intro-section">
+    <h2>✨ 特色功能</h2>
+    <div class="intro-features">
+      {% for feature in data.intro.features %}
+      <div class="intro-feature">
+        <h3>{{feature.name}}</h3>
+        <p>{{feature.desc}}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Footer -->
+  <div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-pixel);font-size:8px;margin-top:auto;">
+    ⛏ {{data.intro.serverName}} · Minecraft {{data.intro.version}}
+  </div>
+
+</div>
+
+</body>
+</html>
