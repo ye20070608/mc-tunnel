@@ -380,7 +380,10 @@ class MCServerAdapter:
             self._log.debug("Failed to enrich player '{}': {}", name, e)
 
     def _record_last_online(self, name: str, timestamp) -> None:
-        """Update ``last_online`` for *name* in ``whitelist_meta.json``."""
+        """Update ``last_online`` for *name* in ``whitelist_meta.json``.
+
+        Creates a minimal entry if the player isn't in the meta file yet.
+        """
         import json
         import os
         try:
@@ -388,12 +391,13 @@ class MCServerAdapter:
             meta: dict = {}
             if meta_path.is_file():
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            if name in meta:
-                meta[name]["last_online"] = timestamp.strftime("%Y-%m-%d %H:%M")
-                # Atomic write
-                tmp = Path("whitelist_meta.json.tmp")
-                tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-                os.replace(str(tmp), str(meta_path))
+            if name not in meta:
+                meta[name] = {}
+            meta[name]["last_online"] = timestamp.strftime("%Y-%m-%d %H:%M")
+            # Atomic write
+            tmp = Path("whitelist_meta.json.tmp")
+            tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(str(tmp), str(meta_path))
         except Exception:
             pass  # best-effort, don't break join flow
 
