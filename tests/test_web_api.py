@@ -1,8 +1,12 @@
 """Integration test for Flask web server and API routes."""
 import sys
 import json
+from pathlib import Path
 
-sys.path.insert(0, "D:/Visual Studio programs/MC服务器")
+# Ensure the project root is on sys.path (derived relative to this file)
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 import bcrypt
 

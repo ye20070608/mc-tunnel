@@ -35,12 +35,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 阶段 1 | ✅ 完成 | 项目骨架、配置系统、日志系统、技术调研文档 |
 | 阶段 2 | ✅ 完成 | 进程管理器、MC 适配器、RCON 集成、白名单管理、本地 API |
 | 阶段 3 | ✅ 完成 | frp 配置生成器、frp 进程管理、TCP 代理层（协议嗅探）、UDP 预留、连接统计 |
-| 阶段 4 | ✅ 完成 | Flask 双端口 HTTP 服务器、状态 API、介绍页模板 |
+| 阶段 4 | ✅ 完成 | Flask 单端口 HTTP 服务器（8443）、状态 API、介绍页模板 |
 | 阶段 5 | ✅ 完成 | JWT 认证、CSRF 防护、管理后台全功能（服务控制/白名单/日志/穿透配置/审计） |
 | 阶段 6 | 🔧 进行中 | 整合测试、Bug 修复、功能增强 |
 | 阶段 7 | ○ 待完成 | 文档完善、打包发布、CI/CD |
 
 当前焦点：Bug 修复（隧道冲突、中文乱码、玩家管理增强）、文档更新。
+
+### 首次运行行为
+
+- 若 `config/config.yaml` 不存在，自动从 `config/defaults.yaml` 复制模板，打印提示后 **退出**（需用户编辑配置后重新运行）
+- 首次运行时若管理员密码为空，自动设置默认密码 `admin/admin`（BCrypt 加密），登录后应修改
+- 首次运行时交互式选择 PaperMC 版本（从 API 拉取列表），可用 `--version` 跳过
 
 ### 阶段 6 已修复
 
@@ -83,9 +89,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 [公网] → frp穿透 → TCP代理层(协议嗅探) → 本地服务
   ├─ 端口1: MC协议 (25565)   → 0xFE/VarInt识别 → PaperMC
-  ├─ 端口2: 介绍页 (8080)    → 内嵌HTTP → 公开API + HTML模板
-  └─ 端口3: 管理后台 (8443)  → JWT鉴权 + CSRF → 管理面板
+  └─ 端口2: Web 服务 (8443)  → Flask 单端口（介绍页 + 管理后台 + API）
+       ├─ /intro            → 公开介绍页（HTML 模板，无需鉴权）
+       ├─ /dashboard        → 管理面板（JWT 鉴权 + CSRF）
+       ├─ /login            → 登录页
+       ├─ /setup            → 首次配置向导
+       └─ /api/*            → REST API（公开/鉴权分流）
 ```
+
+实际已简化为**单端口架构**（仅 8443），不再使用独立的 8080 介绍页端口。介绍页、管理后台、API 全部走同一个 Flask 应用，通过路由前缀区分。
+首次启动自动生成自签名 SSL 证书（`config/certs/`），默认启用 HTTPS。
 
 核心模块（详细设计见 `Project.md` §3）：
 
@@ -93,8 +106,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |------|------|---------|
 | 控制核心 | 子进程生命周期、配置热重载、日志聚合 | `Project.md` §3.1 |
 | TCP 代理层 | 协议嗅探（0xFE/VarInt → MC；ASCII → 拒绝/302），非 MC 流量拦截 | `Project.md` §3.4 |
-| 穿透客户端 | frp 子进程，自动重连，动态端口映射 | `Project.md` §3.2 |
-| Web 服务 | Flask 双端口 HTTP（8080 介绍页 + 8443 管理后台） | `Project.md` §3.3 |
+| 穿透客户端 | frp 子进程，frpc 不自动启动——由用户在管理面板手动控制 | `Project.md` §3.2 |
+| Web 服务 | Flask 单端口 HTTPS（8443），介绍页 + 管理后台 + API 统一路由 | `Project.md` §3.3 |
 | 鉴权体系 | BCrypt 多用户 + JWT + CSRF + 速率限制 + 操作审计 | `Project.md` §6 |
 
 ---
@@ -111,11 +124,14 @@ source venv/bin/activate       # Linux/macOS
 # 安装依赖
 pip install -r requirements.txt
 
-# 运行
-python main.py
+# 运行（首次运行会创建 config/config.yaml 然后退出，编辑后重新运行）
+venv\Scripts\python main.py              # Windows
+venv/bin/python main.py                  # Linux/macOS
+venv\Scripts\python main.py --version 1.21  # 跳过交互式版本选择
 
 # 测试
-pytest tests/ --cov
+pytest tests/ --cov                          # 全部测试 + 覆盖率
+pytest tests/test_web_api.py -v              # 单个测试文件（34 项集成测试）
 
 # 代码质量
 ruff format --check .          # 格式化检查
@@ -131,13 +147,17 @@ mypy core/ api/                # 类型检查（核心模块）
 - **前端**：Alpine.js + HTMX；轮询 10 秒间隔；CSRF Token 从 `<meta name="csrf-token">` 读取
 - **安全**：BCrypt cost ≥ 12；JWT 密钥 ≥ 256 bit；操作日志记录所有敏感操作；禁止日志泄露密码/Token；输入校验防 RCON 命令注入和目录穿越
 - **Git**：`[T1.3] feat(config): 描述`；`main` 可发布；`feature/stage-N` 分支开发
+- **🔴 每次修改代码后必须 commit**：每完成一个独立的代码改动（不管改了多少文件），立即执行 `git add -A && git commit -m "<简短描述>"`（末尾追加 `Co-Authored-By: Claude <noreply@anthropic.com>`）。目的是让每次改动都有独立的 git 记录，随时可以用 `git revert` 或 `git diff` 回溯。禁止攒一大批改动再统一 commit。
 
 ### 配置
 
-`config.yaml` 五个顶层键：`mc` / `web` / `admins` / `tunnel` / `tunnel.enabled_ports`。详见 `Project.md` §5.1。关键点：
+`config/config.yaml` 六个顶层键：`mc` / `web` / `admins` / `tunnel` / `world` / `intro`。详见 `Project.md` §5.1 和 `config/loader.py` 数据类定义。关键点：
+- 首次运行自动从 `config/defaults.yaml` 复制模板，打印提示后退出
+- 首次运行自动设置默认管理员 `admin/admin`（BCrypt），登录后应修改
 - 启动前校验端口冲突 + Java 版本兼容性（JDK 17+）
 - 内部 API 仅监听 `127.0.0.1`，管理 API 全部经鉴权中间件
-- 支持配置热重载
+- 支持通过 `ConfigManager` 运行时修改配置（如密码变更）
+- `web.ssl_enabled` 默认 true，首次启动自动生成自签名证书到 `config/certs/`
 
 ### API 约定
 
@@ -166,8 +186,6 @@ MC服务器/
 │   │   ├── status.py              # ✓ MC 状态采集（TPS/MOTD/在线人数/进程指标）
 │   │   ├── whitelist.py           # ✓ RCON 白名单管理（WhitelistManager）
 │   │   ├── worlds.py              # ✓ 世界管理（worlds/ 目录 + 三维度分组 + 迁移）
-│   │   ├── status.py              # ✓ MC 状态采集（TPS/MOTD/在线人数/进程指标）
-│   │   ├── whitelist.py           # ✓ RCON 白名单管理（WhitelistManager）
 │   │   ├── downloader.py          # ✓ PaperMC API 下载（含 SHA256 校验）
 │   │   ├── java.py                # ✓ Java 检测与版本校验（4 级查找策略）
 │   │   └── eula.py                # ✓ Mojang EULA 确认
@@ -180,8 +198,10 @@ MC服务器/
 │   │   ├── tcp.py                 # ✓ TCP 代理层（VarInt 解码/协议嗅探/302 重定向）
 │   │   ├── udp.py                 # ○ UDP 预留骨架（二期 Bedrock 支持）
 │   │   └── stats.py               # ✓ 连接数和流量统计（线程安全）
-│   └── audit/
-│       └── logger.py              # ✓ 审计日志（JSON Lines/按操作者过滤/导出）
+│   ├── audit/
+│   │   └── logger.py              # ✓ 审计日志（JSON Lines/按操作者过滤/导出）
+│   └── ssl/
+│       └── __init__.py            # ✓ 自签名 SSL 证书自动生成（首次启动）
 ├── api/
 │   ├── __init__.py
 │   ├── router.py                  # ✓ 蓝图注册 + 依赖注入
@@ -196,7 +216,7 @@ MC服务器/
 │       ├── auth.py               # ✓ JWT 认证中间件（Bearer/Cookie/302+401 分流）
 │       └── csrf.py               # ✓ CSRF 防护中间件（HMAC/2h 过期/双模式校验）
 ├── web/
-│   ├── server.py                  # ✓ Flask 双端口应用工厂（8080 介绍页 + 8443 管理后台）
+│   ├── server.py                  # ✓ Flask 单端口应用工厂（8443，/intro + /dashboard + /api）
 │   ├── templates/
 │   │   ├── intro.html             # ✓ 介绍页模板（服务器状态展示）
 │   │   ├── login.html             # ✓ 登录页（JWT 认证流程）

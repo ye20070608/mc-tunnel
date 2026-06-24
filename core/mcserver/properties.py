@@ -73,6 +73,8 @@ class ServerPropertiesGenerator:
             f"difficulty={w.difficulty}",
             f"pvp={'true' if w.pvp else 'false'}",
             f"hardcore={'true' if w.hardcore else 'false'}",
+            f"white-list={'true' if w.whitelist_enabled else 'false'}",
+            # enforce-whitelist intentionally omitted — OPs should bypass whitelist (vanilla behaviour)
             f"online-mode={'true' if w.online_mode else 'false'}",
             f"allow-flight={'true' if w.allow_flight else 'false'}",
             f"allow-nether={'true' if w.allow_nether else 'false'}",

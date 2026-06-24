@@ -29,9 +29,6 @@
       <label class="nav-item" for="tab-players">
         👥 玩家管理
       </label>
-      <label class="nav-item" for="tab-whitelist">
-        📋 白名单
-      </label>
       <label class="nav-item" for="tab-logs">
         📜 日志
       </label>
@@ -72,7 +69,6 @@
     <!-- Hidden tab radios -->
     <input class="tab-radio" type="radio" name="tab" id="tab-overview" checked>
     <input class="tab-radio" type="radio" name="tab" id="tab-players">
-    <input class="tab-radio" type="radio" name="tab" id="tab-whitelist">
     <input class="tab-radio" type="radio" name="tab" id="tab-logs">
     <input class="tab-radio" type="radio" name="tab" id="tab-console">
     <input class="tab-radio" type="radio" name="tab" id="tab-servercenter">
@@ -81,7 +77,6 @@
     <div class="tab-bar">
       <label class="tab-label tab-overview" for="tab-overview">总览</label>
       <label class="tab-label tab-players" for="tab-players">玩家管理</label>
-      <label class="tab-label tab-whitelist" for="tab-whitelist">白名单</label>
       <label class="tab-label tab-logs" for="tab-logs">日志</label>
       <label class="tab-label tab-console" for="tab-console">控制台</label>
       <label class="tab-label tab-servercenter" for="tab-servercenter">服务器中心</label>
@@ -147,65 +142,42 @@
       </div>
 
       <!-- ============================================================
-           TAB: PLAYERS
+           TAB: PLAYERS (merged — online players + whitelist)
            ============================================================ -->
       <div class="tab-panel tab-players" id="panel-players">
 
-        <div class="card-header">在线玩家 ({{data.server.onlinePlayers}}/{{data.server.maxPlayers}})</div>
-        {% if data.players and data.players|length > 0 %}
-        <table class="data-table">
-          <thead>
-            <tr><th>玩家名</th><th>延迟</th><th>游戏模式</th><th>加入时间</th><th>操作</th></tr>
-          </thead>
-          <tbody>
-            {% for player in data.players %}
-            <tr>
-              <td>🧑 {{player.name}}</td>
-              <td class="mono">{{player.ping}}ms</td>
-              <td>{{player.gamemode}}</td>
-              <td>{{player.joined}}</td>
-              <td><a class="btn btn-danger btn-xs" href="#modal-kick-{{loop.index0}}">踢出</a></td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        {% else %}
-        <div class="empty-state">
-          <p>暂无在线玩家</p>
+        <!-- Whitelist status + controls -->
+        <div class="card-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span id="wl-status-label">🔒 白名单加载中...</span>
+          <button class="btn btn-sm" id="btn-wl-toggle" onclick="toggleWhitelist()" style="font-size:11px;">切换</button>
+          <button class="btn btn-secondary btn-sm" onclick="reloadWhitelist()" style="font-size:11px;">🔄 重载</button>
+          <span style="font-size:10px;color:var(--muted);" id="wl-toggle-hint"></span>
         </div>
-        {% endif %}
-      </div>
 
-      <!-- ============================================================
-           TAB: WHITELIST
-           ============================================================ -->
-      <div class="tab-panel tab-whitelist" id="panel-whitelist">
+        <!-- Pending players (recently rejected by whitelist) -->
+        <div id="pending-section" style="display:none;margin-top:12px;">
+          <div class="card-header" style="font-size:12px;">⏳ 待审核 (被白名单拒绝的玩家)</div>
+          <div id="pending-list"></div>
+        </div>
 
-        <div class="btn-row">
-          <a class="btn btn-primary btn-sm" href="#modal-whitelist-add">+ 添加玩家</a>
-          <button class="btn btn-secondary btn-sm" onclick="showToast('reload')">🔄 重载白名单</button>
+        <!-- Add player form -->
+        <div class="btn-row" style="margin-top:8px;">
+          <input class="input" type="text" id="whitelist-name" placeholder="输入玩家名添加白名单..." style="flex:1;max-width:240px;">
+          <button class="btn btn-primary btn-sm" onclick="whitelistAddFromInput()">+ 添加</button>
+          <button class="btn btn-secondary btn-sm" onclick="showBatchModal()" style="font-size:11px;">📋 批量添加</button>
         </div>
-        {% if data.whitelist and data.whitelist|length > 0 %}
-        <table class="data-table">
-          <thead>
-            <tr><th>玩家名</th><th>添加日期</th><th>操作人</th><th>操作</th></tr>
-          </thead>
-          <tbody>
-            {% for entry in data.whitelist %}
-            <tr>
-              <td>🧑 {{entry.name}}</td>
-              <td>{{entry.added}}</td>
-              <td>{{entry.by}}</td>
-              <td><a class="btn btn-danger btn-xs" href="#modal-whitelist-remove-{{loop.index0}}">移除</a></td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        {% else %}
-        <div class="empty-state">
-          <p>白名单为空</p>
+
+        <!-- Online players -->
+        <div class="card-header" style="margin-top:16px;">在线玩家 (<span id="online-count">0</span>/{{data.server.maxPlayers}})</div>
+        <div id="panel-players-table">
+          <div class="empty-state"><p>暂无在线玩家</p></div>
         </div>
-        {% endif %}
+
+        <!-- Whitelist table -->
+        <div class="card-header" style="margin-top:20px;">📋 白名单 (<span id="wl-count">0</span> 人)</div>
+        <div id="panel-whitelist-table">
+          <div class="empty-state"><p>白名单为空</p></div>
+        </div>
       </div>
 
       <!-- ============================================================
@@ -214,9 +186,9 @@
       <div class="tab-panel tab-logs" id="panel-logs">
 
         <div class="btn-row">
-          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('log-viewer').scrollTop=0;">🔄 刷新</button>
-          <button class="btn btn-secondary btn-sm" onclick="showToast('export')">📥 导出日志</button>
-          <button class="btn btn-danger btn-sm" onclick="showToast('clear')">🗑 清空日志</button>
+          <button class="btn btn-secondary btn-sm" onclick="refreshLogs()">🔄 刷新</button>
+          <button class="btn btn-secondary btn-sm" onclick="exportLogs()">📥 导出日志</button>
+          <button class="btn btn-danger btn-sm" onclick="clearLogs()">🗑 清空日志</button>
         </div>
 
         <div class="card-header">服务器日志</div>
@@ -396,36 +368,41 @@
   {% endfor %}
 {% endif %}
 
-<!-- Whitelist add modal -->
-<div class="modal-overlay" id="modal-whitelist-add">
+<!-- Batch add whitelist modal -->
+<div class="modal-overlay" id="modal-batch-add">
   <div class="modal-box">
-    <h3>+ 添加白名单</h3>
+    <h3>📋 批量添加白名单</h3>
     <div class="field">
-      <label>玩家名</label>
-      <input class="input" id="whitelist-name" placeholder="输入 Minecraft 玩家名">
+      <label>玩家名（每行一个）</label>
+      <textarea class="input" id="batch-names" rows="6" placeholder="Steve&#10;Alex&#10;Herobrine"></textarea>
     </div>
     <div class="modal-actions" style="margin-top:16px;">
-      <a class="modal-close" href="#panel-whitelist">取消</a>
-      <a class="btn btn-primary btn-sm modal-confirm-whitelist-add" style="text-decoration:none;" onclick="event.preventDefault(); window.whitelistAdd(document.getElementById('whitelist-name').value.trim());">添加</a>
+      <a class="modal-close" href="#panel-players">取消</a>
+      <button class="btn btn-primary btn-sm" onclick="batchWhitelistAdd()">全部添加</button>
     </div>
   </div>
 </div>
 
-<!-- Whitelist remove modals -->
-{% if data.whitelist and data.whitelist|length > 0 %}
-  {% for entry in data.whitelist %}
-  <div class="modal-overlay" id="modal-whitelist-remove-{{loop.index0}}">
-    <div class="modal-box">
-      <h3>⚠ 确认移除</h3>
-      <p>确定要将 <strong>{{entry.name}}</strong> 移出白名单吗？</p>
-      <div class="modal-actions">
-        <a class="modal-close" href="#panel-whitelist">取消</a>
-        <a class="btn btn-danger btn-sm modal-confirm" data-player="{{entry.name}}" style="text-decoration:none;">确认移除</a>
-      </div>
+<!-- Whitelist remove modal -->
+<div class="modal-overlay" id="modal-wl-remove">
+  <div class="modal-box">
+    <h3>⚠ 确认移除</h3>
+    <p>确定要将 <strong id="wl-remove-name">--</strong> 移出白名单吗？</p>
+    <div class="modal-actions">
+      <a class="modal-close" href="#panel-players">取消</a>
+      <button class="btn btn-danger btn-sm modal-confirm" id="btn-wl-remove-confirm">确认移除</button>
     </div>
   </div>
-  {% endfor %}
-{% endif %}
+</div>
+
+<!-- ============================================================
+     TOAST NOTIFICATIONS
+     ============================================================ -->
+<div class="toast" id="toast-stopped" style="border-color:var(--danger);">⏸ 服务器已停止</div>
+<div class="toast" id="toast-restart" style="border-color:var(--warning);">🔄 服务器正在重启...</div>
+<div class="toast" id="toast-backup">💾 备份任务已加入队列</div>
+<div class="toast" id="toast-kicked" style="border-color:var(--danger);">👢 玩家已被踢出</div>
+<div class="toast" id="toast-added">✅ 白名单已添加</div>
 
 <!-- ============================================================
      TOAST NOTIFICATIONS
@@ -440,31 +417,6 @@
 <div class="toast" id="toast-export">📥 日志已导出到文件</div>
 <div class="toast" id="toast-clear" style="border-color:var(--danger);">🗑 日志已清空</div>
 
-<script>
-/**
- * Show a toast notification by ID.
- * Uses the :target pseudo-class to fade in the toast element.
- */
-function showToast(id) {
-  const toast = document.getElementById('toast-' + id);
-  if (!toast) return;
-
-  // Remove any existing hash
-  if (window.location.hash) {
-    window.location.hash = '';
-  }
-
-  // Set hash to show toast
-  setTimeout(function() {
-    window.location.hash = 'toast-' + id;
-  }, 10);
-
-  // Auto-hide after 3 seconds
-  setTimeout(function() {
-    window.location.hash = '';
-  }, 3000);
-}
-</script>
 <script src="{{url_for('static', filename='app.js')}}"></script>
 
 </body>

@@ -8,7 +8,7 @@ cd /d "%~dp0.."
 
 if not exist "venv\Scripts\python.exe" (
     echo [INFO] Python virtual environment not found, creating...
-    python -m venv venv
+    where py >nul 2>nul && (py -3 -m venv venv) || (python -m venv venv)
     if !ERRORLEVEL! NEQ 0 (
         echo [ERROR] Failed to create virtual environment
         echo Make sure Python is installed and added to PATH

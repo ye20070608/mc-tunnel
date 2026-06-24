@@ -4,6 +4,7 @@ All endpoints require JWT authentication.
 """
 
 from flask import Blueprint, current_app, jsonify, request
+from pathlib import Path
 
 from api.middleware.auth import jwt_required
 from api.middleware.csrf import csrf_protect
@@ -272,7 +273,19 @@ def server_info():
     config = getattr(adapter, "_config", None)
     port = config.mc.port if config else 25565
     version = config.mc.version if config else "unknown"
-    online_mode = config.world.online_mode if config and hasattr(config, "world") else True
+
+    # Read online-mode from actual server.properties, not config
+    online_mode = True  # safe default
+    try:
+        props_path = Path("server.properties")
+        if props_path.exists():
+            for line in props_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("online-mode="):
+                    online_mode = line.split("=", 1)[1].strip().lower() == "true"
+                    break
+    except Exception:
+        pass
 
     # Active world
     wm = WorldManager()

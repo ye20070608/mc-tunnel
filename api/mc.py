@@ -4,6 +4,8 @@ All endpoints require JWT authentication. State-changing endpoints
 (POST) also require CSRF protection.
 """
 
+from pathlib import Path
+
 from flask import Blueprint, current_app, jsonify, request
 
 from api.middleware.auth import jwt_required
@@ -98,6 +100,30 @@ def players():
         return jsonify({"error": "not_available", "message": "MC adapter not available"}), 503
     try:
         player_list = adapter.get_players() or []
+        # Inject IP information
+        player_ips = {}
+        try:
+            player_ips = adapter.get_player_ips() or {}
+        except Exception:
+            pass
+
+        # Determine whitelist membership (read whitelist.json directly, no RCON)
+        whitelisted_names: set[str] = set()
+        try:
+            import json
+            wl_path = Path("whitelist.json")
+            if wl_path.is_file():
+                wl_data = json.loads(wl_path.read_text(encoding="utf-8"))
+                if isinstance(wl_data, list):
+                    for entry in wl_data:
+                        if isinstance(entry, dict) and "name" in entry:
+                            whitelisted_names.add(entry["name"].lower())
+        except Exception:
+            pass
+
+        for p in player_list:
+            p["ip"] = player_ips.get(p.get("name", ""), "")
+            p["in_whitelist"] = p.get("name", "").lower() in whitelisted_names
         return jsonify({"success": True, "players": player_list, "count": len(player_list)})
     except Exception as e:
         current_app.logger.error("Failed to get player list: {}", e)
