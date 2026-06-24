@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go version *)",
+      "Bash(go mod *)",
+      "Bash(dotnet --version)",
+      "Bash(python -m pip --version)",
+      "Bash(powershell *)",
+      "Bash(python -m venv venv)",
+      "Bash(./venv/Scripts/python.exe -m pip install --upgrade pip)",
+      "Bash(./venv/Scripts/python.exe -m pip install -r requirements.txt)",
+      "Bash(\"D:/Visual Studio programs/MC服务器/venv/Scripts/python.exe\" --version)",
+      "Bash(\"D:/Visual Studio programs/MC服务器/venv/Scripts/pip.exe\" list)",
+      "Bash(xxd \"D:/Visual Studio programs/MC服务器/MC服务器.sln\")"
+    ]
+  }
+}

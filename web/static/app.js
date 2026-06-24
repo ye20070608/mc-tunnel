@@ -483,58 +483,234 @@ function updatePlayers(data) {
   if (!data || !data.players) return;
 
   var players = data.players;
-  var tbody = _ensureTable('#panel-players', ['玩家名', '所在世界', '坐标', '在线时长', '操作']);
-  if (!tbody) return;
+
+  // Update online count
+  var countEl = document.getElementById('online-count');
+  if (countEl) countEl.textContent = String(players.length);
+
+  // Use the player table container
+  var container = document.getElementById('panel-players-table');
+  if (!container) return;
 
   if (players.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><p>没有在线玩家</p></td></tr>';
+    container.innerHTML = '<div class="empty-state"><p>没有在线玩家</p></div>';
     return;
   }
 
-  var rows = '';
+  var html = '<table class="data-table"><thead><tr><th>玩家名</th><th>所在世界</th><th>坐标</th><th>IP</th><th>在线时长</th><th>操作</th></tr></thead><tbody>';
+  // Use the in_whitelist field from the API — always accurate, no race condition
   for (var i = 0; i < players.length; i++) {
     var p = players[i];
+    var name = p.name || '';
+    var inWl = p.in_whitelist === true;
     var worldIcon = '';
     if (p.world === '地狱') worldIcon = '🔥 ';
     else if (p.world === '末地') worldIcon = '🌑 ';
     else if (p.world === '主世界') worldIcon = '🌍 ';
-    rows += '<tr>' +
-      '<td>🧑 ' + escapeHtml(p.name || '') + '</td>' +
+
+    var actions = '<button class="btn btn-success btn-xs op-btn" data-player="' + encodeAttr(name) + '" data-is-op="' + (p.is_op ? '1' : '0') + '" style="margin-right:4px;">' + (p.is_op ? '撤销OP' : '⚡OP') + '</button>' +
+      '<button class="btn btn-danger btn-xs kick-btn" data-player="' + encodeAttr(name) + '">踢出</button>';
+    if (!inWl) {
+      actions += ' <button class="btn btn-primary btn-xs wl-add-btn" data-player="' + encodeAttr(name) + '" style="margin-left:4px;">📋+白名单</button>';
+    }
+
+    html += '<tr>' +
+      '<td>' + (inWl ? '✅ ' : '🔓 ') + escapeHtml(name) + '</td>' +
       '<td>' + worldIcon + escapeHtml(p.world || '--') + '</td>' +
       '<td class="mono">' + escapeHtml(p.coords || '--') + '</td>' +
+      '<td class="mono" style="font-size:10px;">' + escapeHtml(p.ip || '--') + '</td>' +
       '<td>' + escapeHtml(p.online_time || '--') + '</td>' +
-      '<td>' +
-        '<button class="btn btn-success btn-xs op-btn" data-player="' + encodeAttr(p.name || '') + '" data-is-op="' + (p.is_op ? '1' : '0') + '" style="margin-right:4px;">' + (p.is_op ? '撤销OP' : '⚡OP') + '</button>' +
-        '<button class="btn btn-danger btn-xs kick-btn" data-player="' + encodeAttr(p.name || '') + '">踢出</button>' +
-      '</td>' +
+      '<td>' + actions + '</td>' +
       '</tr>';
   }
-  tbody.innerHTML = rows;
+  html += '</tbody></table>';
+  container.innerHTML = html;
 }
 
 function updateWhitelist(data) {
   if (!data || !data.whitelist) return;
 
   var entries = data.whitelist;
-  var tbody = _ensureTable('#panel-whitelist', ['玩家名', '添加日期', '操作人', '操作']);
-  if (!tbody) return;
+  var container = document.getElementById('panel-whitelist-table');
+  var countEl = document.getElementById('wl-count');
+  if (countEl) countEl.textContent = String(entries.length);
+
+  // Build the global whitelisted names cache for player list cross-reference
+  var nameSet = new Set();
+  for (var i = 0; i < entries.length; i++) {
+    nameSet.add((entries[i].name || '').toLowerCase());
+  }
+  window._whitelistedNames = nameSet;
+
+  if (!container) return;
 
   if (entries.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><p>白名单为空</p></td></tr>';
+    container.innerHTML = '<div class="empty-state"><p>白名单为空</p><p style="font-size:10px;color:var(--muted);">使用上方的输入框添加玩家</p></div>';
     return;
   }
 
-  var rows = '';
+  var html = '<table class="data-table"><thead><tr><th>状态</th><th>玩家名</th><th>IP</th><th>添加日期</th><th>添加人</th><th>操作</th></tr></thead><tbody>';
   for (var i = 0; i < entries.length; i++) {
     var entry = entries[i];
-    rows += '<tr>' +
-      '<td>🧑 ' + escapeHtml(entry.name || '') + '</td>' +
-      '<td>' + escapeHtml(entry.addedAt || entry.added_at || entry.added || '--') + '</td>' +
-      '<td>' + escapeHtml(entry.addedBy || entry.added_by || entry.by || '--') + '</td>' +
-      '<td><button class="btn btn-danger btn-xs whitelist-remove-btn" data-player="' + encodeAttr(entry.name || '') + '">移除</button></td>' +
+    var name = entry.name || '';
+    var onlineDot = entry.online ? '<span style="color:var(--success);" title="在线">🟢</span>' : '<span style="color:var(--muted);" title="离线">◌</span>';
+    // Show IP with online indicator, don't replace IP with HTML
+    var ipDisplay = entry.ip || '--';
+    if (entry.online && entry.ip) {
+      ipDisplay = '🟢 ' + entry.ip;
+    } else if (entry.online) {
+      ipDisplay = '🟢 在线';
+    }
+    html += '<tr>' +
+      '<td>' + onlineDot + '</td>' +
+      '<td>🧑 ' + escapeHtml(name) + '</td>' +
+      '<td class="mono" style="font-size:10px;">' + escapeHtml(ipDisplay) + '</td>' +
+      '<td>' + escapeHtml(entry.added_at || '--') + '</td>' +
+      '<td>' + escapeHtml(entry.added_by || '--') + '</td>' +
+      '<td><button class="btn btn-danger btn-xs wl-remove-btn" data-player="' + encodeAttr(name) + '">移除</button></td>' +
       '</tr>';
   }
-  tbody.innerHTML = rows;
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function updatePending(data) {
+  if (!data || !data.pending) return;
+
+  var pending = data.pending;
+  var section = document.getElementById('pending-section');
+  var list = document.getElementById('pending-list');
+  if (!section || !list) return;
+
+  if (pending.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = '';
+  var html = '<table class="data-table"><thead><tr><th>玩家名</th><th>时间</th><th>IP</th><th>操作</th></tr></thead><tbody>';
+  for (var i = 0; i < pending.length && i < 10; i++) {
+    var p = pending[i];
+    html += '<tr>' +
+      '<td>❌ ' + escapeHtml(p.name || '') + '</td>' +
+      '<td class="mono">' + escapeHtml(p.time || '--') + '</td>' +
+      '<td class="mono" style="font-size:10px;">' + escapeHtml(p.ip || '--') + '</td>' +
+      '<td><button class="btn btn-primary btn-xs wl-add-btn" data-player="' + encodeAttr(p.name || '') + '">+ 添加</button></td>' +
+      '</tr>';
+  }
+  html += '</tbody></table>';
+  list.innerHTML = html;
+}
+
+function updateWhitelistStatus(data) {
+  // Called by the whitelist toggle API response or by polling
+  var enabled = data && data.enabled !== undefined ? data.enabled : null;
+  var label = document.getElementById('wl-status-label');
+  var btn = document.getElementById('btn-wl-toggle');
+  var hint = document.getElementById('wl-toggle-hint');
+
+  if (enabled === true) {
+    if (label) label.innerHTML = '🔒 白名单已启用 — 仅白名单玩家可加入';
+    if (btn) btn.textContent = '临时关闭';
+    if (btn) btn.className = 'btn btn-warning btn-sm';
+    if (hint) hint.textContent = '朋友想加入？点"临时关闭"允许任何人连入';
+  } else if (enabled === false) {
+    if (label) label.innerHTML = '🔓 白名单已关闭 — 任何人可加入';
+    if (btn) btn.textContent = '开启白名单';
+    if (btn) btn.className = 'btn btn-success btn-sm';
+    if (hint) hint.textContent = '所有人都能加入时，在在线列表中一键加入白名单';
+  } else {
+    if (label) label.innerHTML = '⚠ 服务器未运行，白名单状态未知';
+    if (btn) btn.disabled = true;
+    if (hint) hint.textContent = '';
+  }
+}
+
+// ---- Whitelist action functions ----
+
+function refreshWhitelist() {
+  var poller = window._whitelistPoller;
+  if (poller) { poller.stop(); poller.start(); }
+  var pp = window._pendingPoller;
+  if (pp) { pp.stop(); pp.start(); }
+}
+
+async function toggleWhitelist() {
+  var btn = document.getElementById('btn-wl-toggle');
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    var data = await apiCall('/api/whitelist/toggle', 'POST', {});
+    var result = (data && data.data) ? data.data : {};
+    updateWhitelistStatus(result);
+    showToast(result.message || '已切换', 'success');
+    refreshWhitelist();
+  } catch (err) {
+    showToast('切换失败: ' + (err.message || '网络错误'), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; }
+  }
+}
+
+async function reloadWhitelist() {
+  try {
+    var data = await apiCall('/api/whitelist/reload', 'POST', {});
+    showToast(data.message || '白名单已重载', 'success');
+    refreshWhitelist();
+  } catch (err) {
+    showToast('重载失败: ' + (err.message || '网络错误'), 'error');
+  }
+}
+
+async function whitelistAddFromInput() {
+  var input = document.getElementById('whitelist-name');
+  if (!input) return;
+  var name = input.value.trim();
+  if (!name) { showToast('请输入玩家名', 'error'); return; }
+  try {
+    var data = await apiCall('/api/whitelist/add', 'POST', { name: name });
+    if (data && data.success) {
+      showToast(data.message || name + ' 已添加', 'success');
+      input.value = '';
+      refreshWhitelist();
+    } else {
+      showToast((data && data.message) || '添加失败', 'error');
+    }
+  } catch (err) {
+    showToast('添加失败: ' + (err.message || '网络错误'), 'error');
+  }
+}
+
+function showBatchModal() {
+  var modal = document.getElementById('modal-batch-add');
+  if (modal) modal.classList.add('active');
+}
+
+async function batchWhitelistAdd() {
+  var textarea = document.getElementById('batch-names');
+  if (!textarea) return;
+  var raw = textarea.value.trim();
+  if (!raw) { showToast('请输入玩家名', 'error'); return; }
+  var names = raw.split(/[\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+  if (names.length === 0) { showToast('请输入至少一个玩家名', 'error'); return; }
+
+  var added = 0, failed = 0;
+  for (var i = 0; i < names.length; i++) {
+    try {
+      var data = await apiCall('/api/whitelist/add', 'POST', { name: names[i] });
+      if (data && data.success) {
+        added++;
+      } else {
+        failed++;
+      }
+    } catch (_e) {
+      failed++;
+    }
+  }
+  showToast('成功添加 ' + added + ' 人' + (failed > 0 ? '，失败 ' + failed + ' 人' : ''), added > 0 ? 'success' : 'error');
+  textarea.value = '';
+  var modal = document.getElementById('modal-batch-add');
+  if (modal) modal.classList.remove('active');
+  refreshWhitelist();
 }
 
 function updateLogs(data) {
@@ -543,6 +719,11 @@ function updateLogs(data) {
   var logs = data.logs;
   var viewer = document.getElementById('log-viewer') || document.querySelector('.log-viewer');
   if (!viewer) return;
+
+  if (logs.length === 0) {
+    viewer.innerHTML = '<div class="empty-state" style="padding:20px;"><p>暂无日志</p><p style="font-size:10px;color:var(--muted);">启动 MC 服务器后将显示日志</p></div>';
+    return;
+  }
 
   var html = '';
   for (var i = 0; i < logs.length; i++) {
@@ -559,6 +740,69 @@ function updateLogs(data) {
 
   viewer.innerHTML = html;
   viewer.scrollTop = viewer.scrollHeight;
+}
+
+function refreshLogs() {
+  var poller = window._logsPoller;
+  if (poller) {
+    poller.stop();
+    poller.start();
+  } else {
+    // Poller not started yet — do a one-shot fetch
+    apiCall('/api/logs/recent?limit=100').then(function (data) {
+      updateLogs(data);
+    }).catch(function () {});
+  }
+}
+
+async function exportLogs() {
+  try {
+    var token = getJWT();
+    var resp = await fetch('/api/logs/export?limit=5000', {
+      headers: {
+        'Accept': 'text/plain',
+        'Authorization': 'Bearer ' + token,
+      },
+    });
+    if (!resp.ok) {
+      var errData = await resp.json().catch(function () { return {}; });
+      showToast(errData.message || '导出失败', 'error');
+      return;
+    }
+    var blob = await resp.blob();
+    var url = window.URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'server_logs.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    showToast('日志已导出', 'success');
+  } catch (err) {
+    showToast('导出失败: ' + (err.message || '网络错误'), 'error');
+  }
+}
+
+async function clearLogs() {
+  if (!confirm('确定要清空服务器日志吗？')) return;
+  try {
+    var data = await apiCall('/api/logs/clear', 'POST', {});
+    showToast(data.message || '日志已清空', 'success');
+    // Clear the display immediately
+    var viewer = document.getElementById('log-viewer') || document.querySelector('.log-viewer');
+    if (viewer) {
+      viewer.innerHTML = '<div class="empty-state" style="padding:20px;"><p>日志已清空</p></div>';
+    }
+    // Restart the poller so it picks up new entries
+    var poller = window._logsPoller;
+    if (poller) {
+      poller.stop();
+      poller.start();
+    }
+  } catch (err) {
+    showToast('清空失败: ' + (err.message || '网络错误'), 'error');
+  }
 }
 
 function updateConsole(data) {
@@ -1079,8 +1323,7 @@ async function whitelistRemove(playerName) {
   try {
     await apiCall('/api/whitelist/remove', 'POST', { name: playerName });
     showToast(playerName + ' 已从白名单移除', 'success');
-    var poller = window._whitelistPoller;
-    if (poller) { poller.stop(); poller.start(); }
+    refreshWhitelist();
   } catch (err) {
     showToast(err.message || '移除失败', 'error');
   }
@@ -1174,13 +1417,21 @@ document.addEventListener('DOMContentLoaded', function () {
     statusPoller.onData(function (data) { updateDashboard(data); });
     window._statusPoller = statusPoller;
 
-    var playerPoller = new LivePoller('/api/mc/players', 15000);
+    var playerPoller = new LivePoller('/api/mc/players', 5000);
     playerPoller.onData(function (data) { updatePlayers(data); });
     window._playerPoller = playerPoller;
 
     var whitelistPoller = new LivePoller('/api/whitelist/list', 15000);
-    whitelistPoller.onData(function (data) { updateWhitelist(data); });
+    whitelistPoller.onData(function (data) {
+      updateWhitelist(data);
+      // Also update whitelist status from the list response
+      updateWhitelistStatus(data);
+    });
     window._whitelistPoller = whitelistPoller;
+
+    var pendingPoller = new LivePoller('/api/whitelist/pending', 10000);
+    pendingPoller.onData(function (data) { updatePending(data); });
+    window._pendingPoller = pendingPoller;
 
     var logsPoller = new LivePoller('/api/logs/recent?limit=100', 10000);
     logsPoller.onData(function (data) { updateLogs(data); });
@@ -1207,6 +1458,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Stagger other starts to avoid request flood
     setTimeout(function () { playerPoller.start(); }, 200);
     setTimeout(function () { whitelistPoller.start(); }, 400);
+    setTimeout(function () { pendingPoller.start(); }, 300);
     setTimeout(function () { logsPoller.start(); }, 600);
     setTimeout(function () { consolePoller.start(); }, 800);
     setTimeout(function () { serverCenterPoller.start(); }, 1000);
@@ -1295,11 +1547,46 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  // --- Whitelist remove (delegated) ---
+  // --- Whitelist add / remove (delegated) ---
   document.addEventListener('click', function (e) {
-    var btn = e.target.closest('.whitelist-remove-btn');
-    if (btn) {
-      whitelistRemove(btn.getAttribute('data-player'));
+    var wlRemove = e.target.closest('.wl-remove-btn');
+    if (wlRemove) {
+      var playerName = wlRemove.getAttribute('data-player');
+      // Show confirmation modal
+      var modal = document.getElementById('modal-wl-remove');
+      var nameSpan = document.getElementById('wl-remove-name');
+      var confirmBtn = document.getElementById('btn-wl-remove-confirm');
+      if (modal && nameSpan) {
+        nameSpan.textContent = playerName;
+        if (confirmBtn) confirmBtn.setAttribute('data-player', playerName);
+        modal.classList.add('active');
+      } else {
+        // Fallback: direct remove
+        whitelistRemove(playerName);
+      }
+      return;
+    }
+    var wlAdd = e.target.closest('.wl-add-btn');
+    if (wlAdd) {
+      var name = wlAdd.getAttribute('data-player');
+      if (name) {
+        var btn = wlAdd;
+        btn.disabled = true;
+        btn.textContent = '...';
+        apiCall('/api/whitelist/add', 'POST', { name: name }).then(function (data) {
+          if (data && data.success) {
+            showToast(data.message || name + ' 已添加到白名单', 'success');
+            refreshWhitelist();
+          } else {
+            showToast((data && data.message) || '添加失败', 'error');
+          }
+        }).catch(function (err) {
+          showToast('添加失败: ' + (err.message || '网络错误'), 'error');
+        }).finally(function () {
+          btn.disabled = false;
+          btn.textContent = '📋+白名单';
+        });
+      }
     }
   });
 
@@ -1313,8 +1600,9 @@ document.addEventListener('DOMContentLoaded', function () {
       if (playerName) {
         if (modal.id && modal.id.indexOf('modal-kick') === 0) {
           kickPlayer(playerName);
-        } else if (modal.id && modal.id.indexOf('modal-whitelist-remove') === 0) {
+        } else if (modal.id === 'modal-wl-remove') {
           whitelistRemove(playerName);
+          modal.classList.remove('active');
         }
       }
       modal.classList.remove('active');

@@ -48,6 +48,11 @@ class MCServerAdapter:
         self._enriched_cache: dict[str, dict] = {}
         self._last_enrich: dict[str, float] = {}
 
+        # Pending players — players rejected by whitelist
+        self._pending_players: dict[str, dict] = {}   # name → {time, ip}
+        # IP tracking — last known IP per player (from join events)
+        self._player_ips: dict[str, str] = {}          # name → ip
+
         self._process = ProcessManager(
             name="paper-mc",
             cmd=mc_cmd,
@@ -77,8 +82,9 @@ class MCServerAdapter:
     def start(self) -> bool:
         """Start the Minecraft server.
 
-        Generates ``server.properties`` (with RCON enabled) before
-        launching, then validates the EULA and the server jar.
+        Ensures ``server.properties`` has RCON enabled before launching.
+        If the file exists, patches missing/invalid RCON settings in-place;
+        otherwise generates a fresh copy from the config template.
 
         Returns:
             True if the server started successfully.
@@ -86,7 +92,7 @@ class MCServerAdapter:
         if not self._check_eula():
             return False
 
-        # Generate server.properties before first launch
+        # Ensure RCON is enabled in server.properties (always, not just on first run)
         props_path = Path("server.properties")
         if not props_path.exists():
             self._log.info("Generating server.properties...")
@@ -101,8 +107,17 @@ class MCServerAdapter:
                 self._rcon_port,
                 self._rcon_password[:4] + "****",
             )
-            # Update the status collector with the new RCON password
-            self._status_collector._rcon_password = self._rcon_password
+        else:
+            # Existing server.properties — patch RCON settings if missing/broken
+            self._rcon_password = self._ensure_rcon_enabled(props_path)
+            self._log.info(
+                "server.properties patched: RCON enabled (port={})",
+                self._rcon_port,
+            )
+
+        # Update the status collector with the current RCON password
+        self._status_collector._rcon_password = self._rcon_password
+        self._status_collector._rcon_port = self._rcon_port
 
         return self._process.start()
 
@@ -241,21 +256,24 @@ class MCServerAdapter:
 
                 # Online time from console join tracking
                 join_time = self._player_join_times.get(name)
-                if join_time:
-                    p["online_time"] = self._format_duration(
-                        (now - join_time).total_seconds()
-                    )
-                else:
-                    p["online_time"] = ""
+                if not join_time:
+                    # Player was already online when tracking started
+                    # — record now as join time so duration starts counting
+                    self._player_join_times[name] = now
+                    join_time = now
+
+                p["online_time"] = self._format_duration(
+                    (now - join_time).total_seconds()
+                )
 
                 # Enrichment cache (world + coords via RCON, lazy)
                 enriched = self._enriched_cache.get(name, {})
                 p["world"] = enriched.get("world", "")
                 p["coords"] = enriched.get("coords", "")
 
-                # Schedule enrichment if stale (>30 s) or never done
+                # Schedule enrichment if stale (>10 s) or never done
                 last = self._last_enrich.get(name, 0)
-                if (now.timestamp() - last) > 30:
+                if (now.timestamp() - last) > 10:
                     import threading
                     threading.Thread(
                         target=self._enrich_player, args=(name,), daemon=True
@@ -267,18 +285,20 @@ class MCServerAdapter:
             return []
 
     def _on_server_output(self, line: str) -> None:
-        """Detect player join/leave events from server console output."""
+        """Detect player join/leave/rejection events from server console output."""
         import re
+        now = datetime.now()
+
         # "Archetto joined the game"
         m = re.search(r"(\w{2,16}) joined the game", line)
         if m:
             name = m.group(1)
-            self._player_join_times[name] = datetime.now()
+            self._player_join_times[name] = now
+            # Clear from pending once they successfully join
+            self._pending_players.pop(name, None)
             # Eagerly enrich on join
-            import threading
-            threading.Thread(
-                target=self._enrich_player, args=(name,), daemon=True
-            ).start()
+            t = threading.Thread(target=self._enrich_player, args=(name,), daemon=True)
+            t.start()
             return
 
         # "Archetto left the game"
@@ -288,6 +308,28 @@ class MCServerAdapter:
             self._player_join_times.pop(name, None)
             self._enriched_cache.pop(name, None)
             self._last_enrich.pop(name, None)
+            return
+
+        # "Steve[/192.168.1.5:54321] logged in with entity id ..."
+        m = re.search(r"(\w{2,16})\[/([\d.]+):\d+\] logged in", line)
+        if m:
+            name = m.group(1)
+            ip = m.group(2)
+            self._player_ips[name] = ip
+            return
+
+        # Whitelist rejection: "You are not whitelisted on this server!"
+        if "not whitelisted" in line.lower() or "not whitelisted" in line:
+            # Try to extract player name from GameProfile or fallback
+            name_m = re.search(r"name=(\w{2,16})", line)
+            ip_m = re.search(r"\(/([\d.]+):\d+\)", line)
+            if name_m:
+                pending_name = name_m.group(1)
+                pending_ip = ip_m.group(1) if ip_m else ""
+                self._pending_players[pending_name] = {
+                    "time": now.strftime("%H:%M:%S"),
+                    "ip": pending_ip,
+                }
 
     def _enrich_player(self, name: str) -> None:
         """Fetch world + coordinates for *name* via RCON and cache them."""
@@ -469,23 +511,90 @@ class MCServerAdapter:
     # ------------------------------------------------------------------
 
     def get_logs(self, limit: int = 100) -> list[dict[str, Any]]:
-        """Return recent audit log entries.
+        """Return recent server log entries from PaperMC's ``logs/latest.log``.
 
-        Delegates to :class:`AuditLogger` with the default log path
-        ``logs/audit.log``.
+        Parses lines in the standard MC server log format::
+
+            [HH:MM:SS LEVEL]: message text
+
+        Falls back to the in-memory console buffer if the log file does
+        not exist or is empty.
 
         Args:
             limit: Maximum number of entries to return (newest first).
 
         Returns:
-            A list of audit entry dicts.
+            A list of dicts with keys ``time``, ``level``, ``message``.
         """
-        try:
-            audit = AuditLogger()
-            return audit.get_logs(limit=limit)
-        except Exception as e:
-            self._log.warning("Failed to retrieve audit logs: {}", e)
+        entries = self._read_server_log(limit)
+        if entries:
+            return entries
+
+        # Fallback: parse in-memory console buffer lines
+        raw_lines = self._process.get_console_buffer(limit)
+        return self._parse_console_lines(raw_lines)
+
+    def _read_server_log(self, limit: int) -> list[dict[str, Any]]:
+        """Read and parse the PaperMC ``logs/latest.log`` file.
+
+        Returns newest entries first, up to *limit*.
+        """
+        from pathlib import Path
+
+        log_path = Path("logs/latest.log")
+        if not log_path.is_file():
             return []
+
+        try:
+            raw = log_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return []
+
+        lines = raw.splitlines()
+        entries = self._parse_console_lines(lines)
+        entries.reverse()  # newest first
+        return entries[:limit]
+
+    @staticmethod
+    def _parse_console_lines(lines: list[str]) -> list[dict[str, Any]]:
+        """Parse raw console/log lines into structured entries.
+
+        Handles the standard PaperMC format::
+
+            [13:45:22 INFO]: message text
+
+        as well as continuation lines (no timestamp prefix — appended
+        to the previous entry's message).
+
+        Args:
+            lines: Raw text lines from the console or log file.
+
+        Returns:
+            List of dicts with ``time``, ``level``, ``message``, in the
+            order they appear (oldest first).
+        """
+        import re
+
+        # Pattern: [HH:MM:SS LEVEL]: rest of message
+        _LOG_RE = re.compile(r"^\[(\d{2}:\d{2}:\d{2})\s+(\w+)\]:\s*(.*)")
+
+        entries: list[dict[str, Any]] = []
+        for line in lines:
+            line = line.strip("\r")
+            if not line:
+                continue
+            m = _LOG_RE.match(line)
+            if m:
+                entries.append({
+                    "time": m.group(1),
+                    "level": m.group(2).upper(),
+                    "message": m.group(3),
+                })
+            elif entries:
+                # Continuation line (e.g. stack trace) — append to previous
+                entries[-1]["message"] += "\n" + line
+
+        return entries
 
     # ------------------------------------------------------------------
     # Version & world management
@@ -565,6 +674,44 @@ class MCServerAdapter:
     # ------------------------------------------------------------------
     # Console output
     # ------------------------------------------------------------------
+
+    def get_pending_players(self) -> list[dict]:
+        """Return recently rejected players (not on whitelist).
+
+        Automatically filters out names that are now whitelisted.
+
+        Returns:
+            List of dicts with ``name``, ``time``, ``ip``.
+        """
+        # Filter out players who are now whitelisted
+        whitelisted = set()
+        try:
+            from core.mcserver.whitelist import WhitelistManager
+            wm = WhitelistManager(self)
+            for entry in wm.list():
+                whitelisted.add(entry.get("name", "").lower())
+        except Exception:
+            pass
+
+        result = []
+        for name, info in self._pending_players.items():
+            if name.lower() not in whitelisted:
+                result.append({
+                    "name": name,
+                    "time": info.get("time", ""),
+                    "ip": info.get("ip", ""),
+                })
+        # Newest first
+        result.reverse()
+        return result
+
+    def get_player_ips(self) -> dict[str, str]:
+        """Return the last known IP for each player.
+
+        Returns:
+            Dict mapping player name → IP address string.
+        """
+        return dict(self._player_ips)
 
     def get_console_output(self, limit: int = 100) -> list[str]:
         """Return recent lines of the Minecraft server console output.
@@ -691,6 +838,69 @@ class MCServerAdapter:
             self._log.debug(
                 "RCON configured (port={})", self._rcon_port
             )
+
+    def _ensure_rcon_enabled(self, props_path: Path) -> str:
+        """Patch an existing server.properties to ensure RCON is enabled.
+
+        Returns the RCON password (existing or newly generated).
+        """
+        import secrets
+        import string
+        import os
+
+        lines = props_path.read_text(encoding="utf-8").splitlines()
+        props: dict[str, str] = {}
+        line_indices: dict[str, int] = {}
+        for i, line in enumerate(lines):
+            line_s = line.strip()
+            if not line_s or line_s.startswith("#") or "=" not in line_s:
+                continue
+            key, _, value = line_s.partition("=")
+            key = key.strip()
+            props[key] = value.strip()
+            line_indices[key] = i
+
+        changed = False
+
+        # Ensure enable-rcon=true
+        if props.get("enable-rcon", "false").lower() != "true":
+            if "enable-rcon" in line_indices:
+                lines[line_indices["enable-rcon"]] = "enable-rcon=true"
+            else:
+                lines.append("enable-rcon=true")
+            changed = True
+
+        # Ensure rcon.port is set
+        rcon_port_str = str(self._rcon_port)
+        if props.get("rcon.port", "") != rcon_port_str:
+            if "rcon.port" in line_indices:
+                lines[line_indices["rcon.port"]] = f"rcon.port={rcon_port_str}"
+            else:
+                lines.append(f"rcon.port={rcon_port_str}")
+            changed = True
+
+        # Ensure rcon.password is set (non-empty)
+        password = props.get("rcon.password", "")
+        if not password:
+            alphabet = string.ascii_letters + string.digits
+            password = "".join(secrets.choice(alphabet) for _ in range(16))
+            if "rcon.password" in line_indices:
+                lines[line_indices["rcon.password"]] = f"rcon.password={password}"
+            else:
+                lines.append(f"rcon.password={password}")
+            changed = True
+            self._log.info("Generated new RCON password")
+
+        if changed:
+            # Atomic write via temp file
+            tmp_path = Path(str(props_path) + ".tmp")
+            tmp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            os.replace(str(tmp_path), str(props_path))
+            self._log.info("server.properties updated: RCON settings patched")
+
+        # Re-read RCON config from the patched file
+        self._load_rcon_config()
+        return self._rcon_password
 
     def _rcon_command(self, cmd: str) -> str:
         """Execute an RCON command and return the response.

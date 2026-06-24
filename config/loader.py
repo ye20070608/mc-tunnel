@@ -92,6 +92,7 @@ class WorldConfig:
     enable_command_block: bool = False
     allow_flight: bool = False
     online_mode: bool = True
+    whitelist_enabled: bool = True
     view_distance: int = 10
     simulation_distance: int = 10
 

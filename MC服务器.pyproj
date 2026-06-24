@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{7df9cb8d-9b71-4c7c-8427-31f7ba559e9e}</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>main.py</StartupFile>
+    <SearchPath>.</SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId>venv|venv</InterpreterId>
+    <CommandLineArguments></CommandLineArguments>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">17.0</VisualStudioVersion>
+  </PropertyGroup>
+
+  <!-- 文档 -->
+  <ItemGroup>
+    <Content Include="README.md" />
+    <Content Include="CHANGELOG.md" />
+    <Content Include="Project.md" />
+    <Content Include="Task.md" />
+    <Content Include="requirements.txt" />
+  </ItemGroup>
+
+  <!-- 源文件（占位 — 创建后自动可见） -->
+  <ItemGroup>
+    <Compile Include="main.py" Condition="Exists('main.py')" />
+  </ItemGroup>
+
+  <!-- 目录引用（VS 显示为文件夹） -->
+  <ItemGroup>
+    <Folder Include="api\" />
+    <Folder Include="config\" />
+    <Folder Include="core\" />
+    <Folder Include="docs\" />
+    <Folder Include="logger\" />
+    <Folder Include="scripts\" />
+    <Folder Include="tests\" />
+    <Folder Include="web\" />
+  </ItemGroup>
+
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+</Project>

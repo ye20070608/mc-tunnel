@@ -55,8 +55,10 @@ pip install -r requirements.txt
 cp config/defaults.yaml config/config.yaml
 nano config/config.yaml
 
-# 启动
-python main.py
+# 启动（Windows）
+venv\Scripts\python main.py
+# Linux/macOS
+venv/bin/python main.py
 ```
 
 ## 项目结构
