@@ -18,39 +18,31 @@ def _get_adapter():
     return getattr(current_app, "mc_adapter", None)
 
 
-_LEVELS = {"info", "warn", "warning", "error", "debug"}
-
-
 @logs_bp.route("/recent", methods=["GET"])
 @jwt_required
 def recent():
-    """Return recent server log entries.
+    """Return recent server log lines (raw text, like the console window).
 
-    Reads from PaperMC's ``logs/latest.log`` (falls back to the in-memory
-    console buffer if the file does not exist).
+    Reads ``logs/latest.log`` directly and returns raw lines.
 
     Query params:
-      - level (str): filter by level (info, warn, error, debug).
-      - limit (int, default 100): max entries to return (max 1000).
+      - limit (int, default 500): max lines to return (newest).
     """
-    level: str = request.args.get("level", "").strip().lower()
-    limit: int = min(request.args.get("limit", 100, type=int), 1000)
-
-    if level and level not in _LEVELS:
-        return jsonify({"error": "invalid_input", "message": f"Invalid log level. Supported: {', '.join(sorted(_LEVELS))}"}), 400
-
-    adapter = _get_adapter()
-    if adapter is None:
-        return jsonify({"error": "not_available", "message": "MC adapter not available"}), 503
+    limit: int = max(1, min(request.args.get("limit", 500, type=int), 2000))
 
     try:
-        logs = adapter.get_logs(limit=limit) or []
+        log_path = Path("logs/latest.log")
+        if log_path.is_file():
+            raw = log_path.read_text(encoding="utf-8", errors="replace")
+            lines = raw.splitlines()
+        else:
+            lines = []
 
-        if level:
-            norm_level = "warn" if level == "warning" else level
-            logs = [entry for entry in logs if entry.get("level", "").lower() == norm_level]
+        # Return newest lines
+        if len(lines) > limit:
+            lines = lines[-limit:]
 
-        return jsonify({"success": True, "logs": logs, "count": len(logs)})
+        return jsonify({"success": True, "lines": lines, "count": len(lines)})
     except Exception as e:
         current_app.logger.error("Failed to retrieve logs: {}", e)
         return jsonify({"error": "log_error", "message": str(e)}), 500
@@ -59,46 +51,24 @@ def recent():
 @logs_bp.route("/export", methods=["GET"])
 @jwt_required
 def export():
-    """Export server logs as a downloadable plain-text file.
+    """Export the FULL server log file as a downloadable plain-text file.
 
-    Reads the raw ``logs/latest.log`` file for the most complete export.
-    Falls back to the in-memory console buffer.
-
-    Query params:
-      - level (str): optional filter by level.
-      - limit (int, default 5000): max lines to export (max 50000).
+    Reads ``logs/latest.log`` entirely — no truncation, no filtering.
     """
-    level: str = request.args.get("level", "").strip().lower()
-    limit: int = min(request.args.get("limit", 5000, type=int), 50000)
-
-    adapter = _get_adapter()
-    if adapter is None:
-        return jsonify({"error": "not_available", "message": "MC adapter not available"}), 503
-
     try:
-        # Try reading the raw log file first (preserves original formatting)
         log_path = Path("logs/latest.log")
         if log_path.is_file():
             raw = log_path.read_text(encoding="utf-8", errors="replace")
-            lines = raw.splitlines()
         else:
-            # Fallback to parsed logs
-            logs = adapter.get_logs(limit=limit) or []
-            lines = [f"[{e.get('time', '')}] [{e.get('level', 'INFO')}] {e.get('message', '')}" for e in logs]
+            raw = ""
 
-        if level:
-            norm_level = "warn" if level == "warning" else level.upper()
-            lines = [l for l in lines if f" {norm_level}]" in l or f" {norm_level}:" in l]
-
-        # Apply limit (most recent lines)
-        if len(lines) > limit:
-            lines = lines[-limit:]
-
-        content: str = "\n".join(lines)
         return Response(
-            content,
+            raw,
             mimetype="text/plain; charset=utf-8",
-            headers={"Content-Disposition": "attachment; filename=server_logs.txt"},
+            headers={
+                "Content-Disposition": "attachment; filename=server_logs.txt",
+                "Content-Length": str(len(raw.encode("utf-8"))),
+            },
         )
     except Exception as e:
         current_app.logger.error("Failed to export logs: {}", e)

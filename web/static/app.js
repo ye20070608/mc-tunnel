@@ -708,28 +708,28 @@ async function batchWhitelistAdd() {
 }
 
 function updateLogs(data) {
-  if (!data || !data.logs) return;
+  if (!data || !data.lines) return;
 
-  var logs = data.logs;
+  var lines = data.lines;
   var viewer = document.getElementById('log-viewer') || document.querySelector('.log-viewer');
   if (!viewer) return;
 
-  if (logs.length === 0) {
+  if (lines.length === 0) {
     viewer.innerHTML = '<div class="empty-state" style="padding:20px;"><p>暂无日志</p><p style="font-size:10px;color:var(--muted);">启动 MC 服务器后将显示日志</p></div>';
     return;
   }
 
   var html = '';
-  for (var i = 0; i < logs.length; i++) {
-    var entry = logs[i];
-    var time = entry.time || entry.timestamp || '--';
-    var level = (entry.level || 'info').toLowerCase();
-    var message = entry.message || entry.msg || '';
-    html += '<div class="log-line">' +
-      '<span class="time">' + escapeHtml(time) + '</span>' +
-      '<span class="level ' + escapeHtml(level) + '">' + escapeHtml(level) + '</span>' +
-      '<span class="msg">' + escapeHtml(message) + '</span>' +
-      '</div>';
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var styled = escapeHtml(line);
+    // Highlight chat lines
+    if (/<\w{2,16}>\s/.test(line) && !/\[.*(WARN|ERROR|FATAL).*\]/i.test(line)) {
+      styled = '<span class="console-chat">' + styled + '</span>';
+    } else if (/\[.*(WARN|ERROR|FATAL).*\]/i.test(line)) {
+      styled = '<span class="console-error">' + styled + '</span>';
+    }
+    html += '<div class="log-line console-line">' + styled + '</div>';
   }
 
   viewer.innerHTML = html;
@@ -743,7 +743,7 @@ function refreshLogs() {
     poller.start();
   } else {
     // Poller not started yet — do a one-shot fetch
-    apiCall('/api/logs/recent?limit=100').then(function (data) {
+    apiCall('/api/logs/recent?limit=500').then(function (data) {
       updateLogs(data);
     }).catch(function () {});
   }
@@ -752,7 +752,7 @@ function refreshLogs() {
 async function exportLogs() {
   try {
     var token = getJWT();
-    var resp = await fetch('/api/logs/export?limit=5000', {
+    var resp = await fetch('/api/logs/export', {
       headers: {
         'Accept': 'text/plain',
         'Authorization': 'Bearer ' + token,
@@ -1427,7 +1427,7 @@ document.addEventListener('DOMContentLoaded', function () {
     pendingPoller.onData(function (data) { updatePending(data); });
     window._pendingPoller = pendingPoller;
 
-    var logsPoller = new LivePoller('/api/logs/recent?limit=100', 10000);
+    var logsPoller = new LivePoller('/api/logs/recent?limit=500', 10000);
     logsPoller.onData(function (data) { updateLogs(data); });
     window._logsPoller = logsPoller;
 
