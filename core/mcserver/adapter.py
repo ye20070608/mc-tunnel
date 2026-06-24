@@ -297,8 +297,11 @@ class MCServerAdapter:
             self._player_join_times[name] = now
             # Clear from pending once they successfully join
             self._pending_players.pop(name, None)
-            # Record last-online timestamp in whitelist meta
-            self._record_last_online(name, now)
+            # Record last-online timestamp via WhitelistManager (proper locking)
+            try:
+                WhitelistManager(self).record_last_online(name, now)
+            except Exception:
+                pass
             # Eagerly enrich on join
             t = threading.Thread(target=self._enrich_player, args=(name,), daemon=True)
             t.start()
@@ -378,28 +381,6 @@ class MCServerAdapter:
             self._enriched_cache[name] = {"world": world, "coords": coords, "gamemode": gamemode}
         except Exception as e:
             self._log.debug("Failed to enrich player '{}': {}", name, e)
-
-    def _record_last_online(self, name: str, timestamp) -> None:
-        """Update ``last_online`` for *name* in ``whitelist_meta.json``.
-
-        Creates a minimal entry if the player isn't in the meta file yet.
-        """
-        import json
-        import os
-        try:
-            meta_path = Path("whitelist_meta.json")
-            meta: dict = {}
-            if meta_path.is_file():
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            if name not in meta:
-                meta[name] = {}
-            meta[name]["last_online"] = timestamp.strftime("%Y-%m-%d %H:%M")
-            # Atomic write
-            tmp = Path("whitelist_meta.json.tmp")
-            tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-            os.replace(str(tmp), str(meta_path))
-        except Exception:
-            pass  # best-effort, don't break join flow
 
     @staticmethod
     def _format_duration(seconds: float) -> str:
@@ -666,6 +647,16 @@ class MCServerAdapter:
             })
         return jars
 
+    @staticmethod
+    def _validate_version(version: str) -> bool:
+        """Validate a PaperMC version string before using in glob patterns.
+
+        Only allows digits and dots (e.g. "1.20.4").  Rejects glob
+        metacharacters (*, ?, [, ]) that could expand the search scope.
+        """
+        import re
+        return bool(re.match(r"^[\d.]+$", version))
+
     def switch_version(self, version: str) -> bool:
         """Switch the active PaperMC version.
 
@@ -681,6 +672,11 @@ class MCServerAdapter:
         """
         from pathlib import Path
         from config.loader import ConfigManager
+
+        # Validate version before using in glob (prevents glob injection)
+        if not self._validate_version(version):
+            self._log.warning("Invalid version string rejected: {}", version)
+            return False
 
         # Check that the version JAR exists
         matches = list(Path.cwd().glob(f"paper-{version}-*.jar"))

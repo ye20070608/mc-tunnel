@@ -318,10 +318,13 @@ class ConfigManager:
         Args:
             config_path: Path to the application config file.
         """
-        self.config_path = str(config_path)
+        self.config_path = Path(config_path)
 
     def update_admin_password(self, username: str, new_hash: str) -> bool:
         """Update an admin account's password hash in the config file.
+
+        Uses a temp-file + ``os.replace()`` pattern for atomic writes,
+        preventing file corruption if the write is interrupted.
 
         Args:
             username: Admin username to update.
@@ -333,6 +336,9 @@ class ConfigManager:
         Raises:
             ValueError: If *username* is not found in the config.
         """
+        import os
+        import tempfile
+
         with open(self.config_path, "r", encoding="utf-8") as fh:
             config: dict[str, Any] = yaml.safe_load(fh) or {}
 
@@ -347,8 +353,16 @@ class ConfigManager:
         if not found:
             raise ValueError(f"Admin '{username}' not found in config")
 
-        with open(self.config_path, "w", encoding="utf-8") as fh:
-            yaml.dump(config, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        # Atomic write: temp file → os.replace
+        config_dir = os.path.dirname(self.config_path) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".yaml")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                yaml.dump(config, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            os.replace(tmp_path, self.config_path)
+        except Exception:
+            os.unlink(tmp_path)
+            raise
 
         return True
 

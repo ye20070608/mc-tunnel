@@ -10,10 +10,15 @@ The active world is determined by ``level-name`` in ``server.properties``.
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+# Whitelist of allowed characters in world names — rejects path traversal
+_WORLD_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 class WorldManager:
@@ -35,6 +40,24 @@ class WorldManager:
     def __init__(self, server_dir: str | Path = ".") -> None:
         self._server_dir = Path(server_dir).resolve()
         self._worlds_dir = self._server_dir / "worlds"
+
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def validate_world_name(name: str) -> bool:
+        """Reject path traversal and invalid world names.
+
+        Valid names contain only alphanumeric characters, underscores,
+        and hyphens.  ``..``, ``/``, ``\\``, and empty strings are
+        rejected to prevent directory traversal attacks.
+        """
+        if not name or not name.strip():
+            return False
+        if ".." in name or "/" in name or "\\" in name:
+            return False
+        return bool(_WORLD_NAME_RE.match(name))
 
     # ------------------------------------------------------------------
     # Public API
@@ -109,6 +132,8 @@ class WorldManager:
         Returns:
             True if created, False if it already existed.
         """
+        if not self.validate_world_name(name):
+            return False
         world_path = self._worlds_dir / name
         if world_path.exists():
             return False
@@ -130,6 +155,8 @@ class WorldManager:
         Returns:
             True if the overworld directory was deleted.
         """
+        if not self.validate_world_name(name):
+            return False
         dims = self._get_dimension_paths(name)
         deleted = False
 
@@ -154,6 +181,8 @@ class WorldManager:
             True on success, False if *old_name* overworld doesn't exist
             or *new_name* overworld already exists.
         """
+        if not self.validate_world_name(old_name) or not self.validate_world_name(new_name):
+            return False
         old_dims = self._get_dimension_paths(old_name)
         new_dims = self._get_dimension_paths(new_name)
 
@@ -182,6 +211,8 @@ class WorldManager:
         Returns:
             True if the overworld exists and ``server.properties`` was updated.
         """
+        if not self.validate_world_name(name):
+            return False
         world_path = self._worlds_dir / name
         if not world_path.exists():
             return False
@@ -224,6 +255,9 @@ class WorldManager:
 
         candidates: set[str] = set()
         for name in root_dirs:
+            # Skip hidden directories (starts with .)
+            if name.startswith("."):
+                continue
             if name in SKIP:
                 continue
             if name.endswith("_nether") or name.endswith("_the_end"):
@@ -234,9 +268,9 @@ class WorldManager:
                     base = name[:-9]
                 candidates.add(base)
             else:
-                # Check if this looks like a world (has markers)
+                # Require level.dat (not just session.lock) to confirm it's a real world
                 path = root_dirs[name]
-                if any((path / m).exists() for m in self.WORLD_MARKERS):
+                if (path / "level.dat").exists():
                     candidates.add(name)
 
         # Ensure worlds/ dir exists
@@ -313,7 +347,7 @@ class WorldManager:
         return "worlds/world"
 
     def _set_active_world(self, name: str) -> None:
-        """Update the ``level-name`` entry in ``server.properties``."""
+        """Update the ``level-name`` entry in ``server.properties`` (atomic)."""
         props_path = self._server_dir / "server.properties"
         if not props_path.exists():
             return
@@ -330,7 +364,10 @@ class WorldManager:
         if not updated:
             lines.append(f"level-name={name}")
 
-        props_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # Atomic write via temp file
+        tmp_path = Path(str(props_path) + ".tmp")
+        tmp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        os.replace(str(tmp_path), str(props_path))
 
     @staticmethod
     def _dir_size(path: Path) -> int:

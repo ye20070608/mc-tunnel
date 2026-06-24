@@ -51,14 +51,23 @@ def _find_java_via_java_home() -> str | None:
 def _find_common_install_paths() -> str | None:
     """在常见安装路径中查找 Java。"""
     if sys.platform == "win32":
-        # Windows 常见路径
-        search_roots = [
-            Path("C:/Program Files/Eclipse Adoptium"),
-            Path("C:/Program Files/Java"),
-            Path("C:/Program Files/Eclipse Temurin"),
-            Path("C:/Program Files/Amazon Corretto"),
-            Path("C:/Program Files/Microsoft"),
+        # Use environment variables for localized Program Files paths
+        # (e.g. German "Programme", French "Programmes", Chinese "程序文件")
+        prog_files = os.environ.get("ProgramFiles", "C:\\Program Files")
+        prog_w6432 = os.environ.get("ProgramW6432", prog_files)
+
+        java_vendors = [
+            "Eclipse Adoptium",
+            "Java",
+            "Eclipse Temurin",
+            "Amazon Corretto",
+            "Microsoft",
         ]
+        search_roots = [Path(prog_w6432) / v for v in java_vendors]
+        # Also check ProgramFiles (x86) on 64-bit systems for 32-bit Java
+        if prog_files != prog_w6432:
+            search_roots.extend(Path(prog_files) / v for v in java_vendors)
+
         for root in search_roots:
             if not root.exists():
                 continue

@@ -20,8 +20,15 @@ MC隧道控制器 (mc-tunnel) — 主入口。
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+# Ensure the working directory is the project root (where this file lives).
+# This makes all relative paths (logs/, config/, server.properties, etc.)
+# work correctly regardless of where the user launched the process from.
+_PROJECT_ROOT = Path(__file__).resolve().parent
+os.chdir(str(_PROJECT_ROOT))
 
 # 确保终端输出使用 UTF-8（Windows 中文系统需 chcp 65001 配合）
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":

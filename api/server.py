@@ -147,8 +147,11 @@ def create_world():
     if not name:
         return jsonify({"error": "invalid_input", "message": "World name is required"}), 400
 
+    from core.mcserver.worlds import WorldManager
+    if not WorldManager.validate_world_name(name):
+        return jsonify({"error": "invalid_input", "message": "Invalid world name (letters, digits, underscores, hyphens only)"}), 400
+
     try:
-        from core.mcserver.worlds import WorldManager
         wm = WorldManager()
         result = wm.create_world(name)
         if not result:
@@ -169,10 +172,13 @@ def delete_world():
     if not name:
         return jsonify({"error": "invalid_input", "message": "World name is required"}), 400
 
+    from core.mcserver.worlds import WorldManager
+    if not WorldManager.validate_world_name(name):
+        return jsonify({"error": "invalid_input", "message": "Invalid world name"}), 400
+
     # Refuse to delete the active world while server is running
     adapter = _get_adapter()
     if adapter and adapter.is_running():
-        from core.mcserver.worlds import WorldManager
         wm = WorldManager()
         active = wm.get_active_world()
         # get_active_world returns "worlds/<name>", strip prefix
@@ -181,7 +187,6 @@ def delete_world():
             return jsonify({"error": "active_world", "message": "Cannot delete active world while server is running"}), 409
 
     try:
-        from core.mcserver.worlds import WorldManager
         wm = WorldManager()
         result = wm.delete_world(name)
         if not result:
@@ -203,8 +208,11 @@ def rename_world():
     if not old_name or not new_name:
         return jsonify({"error": "invalid_input", "message": "Both old_name and new_name are required"}), 400
 
+    from core.mcserver.worlds import WorldManager
+    if not WorldManager.validate_world_name(old_name) or not WorldManager.validate_world_name(new_name):
+        return jsonify({"error": "invalid_input", "message": "Invalid world name"}), 400
+
     try:
-        from core.mcserver.worlds import WorldManager
         wm = WorldManager()
         result = wm.rename_world(old_name, new_name)
         if not result:
@@ -225,8 +233,11 @@ def activate_world():
     if not name:
         return jsonify({"error": "invalid_input", "message": "World name is required"}), 400
 
+    from core.mcserver.worlds import WorldManager
+    if not WorldManager.validate_world_name(name):
+        return jsonify({"error": "invalid_input", "message": "Invalid world name"}), 400
+
     try:
-        from core.mcserver.worlds import WorldManager
         wm = WorldManager()
         result = wm.activate_world(name)
         if not result:
@@ -333,6 +344,7 @@ def update_settings():
 
     # --- online_mode ---
     if "online_mode" in data:
+        import os
         new_val = bool(data["online_mode"])
         # Update server.properties
         from pathlib import Path
@@ -347,7 +359,10 @@ def update_settings():
                     break
             if not found:
                 lines.append(f"online-mode={'true' if new_val else 'false'}")
-            props_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            # Atomic write via temp file
+            tmp_path = Path(str(props_path) + ".tmp")
+            tmp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            os.replace(str(tmp_path), str(props_path))
         # Update in-memory config
         if adapter is not None and hasattr(adapter, "_config"):
             adapter._config.world.online_mode = new_val
