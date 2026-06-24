@@ -102,6 +102,7 @@ class WhitelistManager:
                 "uuid": uuid,
                 "added_at": m.get("added_at", ""),
                 "added_by": m.get("added_by", ""),
+                "last_online": m.get("last_online", ""),
                 "online": False,  # filled in by API layer
             })
 

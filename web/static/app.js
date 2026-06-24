@@ -497,7 +497,8 @@ function updatePlayers(data) {
     return;
   }
 
-  var html = '<table class="data-table"><thead><tr><th>玩家名</th><th>所在世界</th><th>坐标</th><th>IP</th><th>在线时长</th><th>操作</th></tr></thead><tbody>';
+  var gamemodeNames = { '0': '🏕 生存', '1': '🎨 创造', '2': '⚔ 冒险', '3': '👁 旁观' };
+  var html = '<table class="data-table"><thead><tr><th>玩家名</th><th>所在世界</th><th>坐标</th><th>游戏模式</th><th>IP</th><th>在线时长</th><th>操作</th></tr></thead><tbody>';
   // Use the in_whitelist field from the API — always accurate, no race condition
   for (var i = 0; i < players.length; i++) {
     var p = players[i];
@@ -507,6 +508,7 @@ function updatePlayers(data) {
     if (p.world === '地狱') worldIcon = '🔥 ';
     else if (p.world === '末地') worldIcon = '🌑 ';
     else if (p.world === '主世界') worldIcon = '🌍 ';
+    var gm = gamemodeNames[p.gamemode] || p.gamemode || '--';
 
     var actions = '<button class="btn btn-success btn-xs op-btn" data-player="' + encodeAttr(name) + '" data-is-op="' + (p.is_op ? '1' : '0') + '" style="margin-right:4px;">' + (p.is_op ? '撤销OP' : '⚡OP') + '</button>' +
       '<button class="btn btn-danger btn-xs kick-btn" data-player="' + encodeAttr(name) + '">踢出</button>';
@@ -518,6 +520,7 @@ function updatePlayers(data) {
       '<td>' + (inWl ? '✅ ' : '🔓 ') + escapeHtml(name) + '</td>' +
       '<td>' + worldIcon + escapeHtml(p.world || '--') + '</td>' +
       '<td class="mono">' + escapeHtml(p.coords || '--') + '</td>' +
+      '<td>' + gm + '</td>' +
       '<td class="mono" style="font-size:10px;">' + escapeHtml(p.ip || '--') + '</td>' +
       '<td>' + escapeHtml(p.online_time || '--') + '</td>' +
       '<td>' + actions + '</td>' +
@@ -549,7 +552,7 @@ function updateWhitelist(data) {
     return;
   }
 
-  var html = '<table class="data-table"><thead><tr><th>状态</th><th>玩家名</th><th>IP</th><th>添加日期</th><th>添加人</th><th>操作</th></tr></thead><tbody>';
+  var html = '<table class="data-table"><thead><tr><th>状态</th><th>玩家名</th><th>IP</th><th>最后在线</th><th>添加日期</th><th>添加人</th><th>操作</th></tr></thead><tbody>';
   for (var i = 0; i < entries.length; i++) {
     var entry = entries[i];
     var name = entry.name || '';
@@ -565,6 +568,7 @@ function updateWhitelist(data) {
       '<td>' + onlineDot + '</td>' +
       '<td>🧑 ' + escapeHtml(name) + '</td>' +
       '<td class="mono" style="font-size:10px;">' + escapeHtml(ipDisplay) + '</td>' +
+      '<td>' + escapeHtml(entry.last_online || '--') + '</td>' +
       '<td>' + escapeHtml(entry.added_at || '--') + '</td>' +
       '<td>' + escapeHtml(entry.added_by || '--') + '</td>' +
       '<td><button class="btn btn-danger btn-xs wl-remove-btn" data-player="' + encodeAttr(name) + '">移除</button></td>' +
@@ -588,13 +592,12 @@ function updatePending(data) {
   }
 
   section.style.display = '';
-  var html = '<table class="data-table"><thead><tr><th>玩家名</th><th>时间</th><th>IP</th><th>操作</th></tr></thead><tbody>';
+  var html = '<table class="data-table"><thead><tr><th>玩家名</th><th>时间</th><th>操作</th></tr></thead><tbody>';
   for (var i = 0; i < pending.length && i < 10; i++) {
     var p = pending[i];
     html += '<tr>' +
       '<td>❌ ' + escapeHtml(p.name || '') + '</td>' +
       '<td class="mono">' + escapeHtml(p.time || '--') + '</td>' +
-      '<td class="mono" style="font-size:10px;">' + escapeHtml(p.ip || '--') + '</td>' +
       '<td><button class="btn btn-primary btn-xs wl-add-btn" data-player="' + encodeAttr(p.name || '') + '">+ 添加</button></td>' +
       '</tr>';
   }
