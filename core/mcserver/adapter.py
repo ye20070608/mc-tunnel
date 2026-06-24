@@ -266,10 +266,11 @@ class MCServerAdapter:
                     (now - join_time).total_seconds()
                 )
 
-                # Enrichment cache (world + coords via RCON, lazy)
+                # Enrichment cache (world + coords + gamemode via RCON, lazy)
                 enriched = self._enriched_cache.get(name, {})
                 p["world"] = enriched.get("world", "")
                 p["coords"] = enriched.get("coords", "")
+                p["gamemode"] = enriched.get("gamemode", "")
 
                 # Schedule enrichment if stale (>10 s) or never done
                 last = self._last_enrich.get(name, 0)
@@ -296,6 +297,8 @@ class MCServerAdapter:
             self._player_join_times[name] = now
             # Clear from pending once they successfully join
             self._pending_players.pop(name, None)
+            # Record last-online timestamp in whitelist meta
+            self._record_last_online(name, now)
             # Eagerly enrich on join
             t = threading.Thread(target=self._enrich_player, args=(name,), daemon=True)
             t.start()
@@ -332,7 +335,7 @@ class MCServerAdapter:
                 }
 
     def _enrich_player(self, name: str) -> None:
-        """Fetch world + coordinates for *name* via RCON and cache them."""
+        """Fetch world, coordinates, and gamemode for *name* via RCON."""
         import re
         try:
             now = time.time()
@@ -362,9 +365,37 @@ class MCServerAdapter:
             else:
                 world = "主世界"
 
-            self._enriched_cache[name] = {"world": world, "coords": coords}
+            # Get gamemode (0=survival, 1=creative, 2=adventure, 3=spectator)
+            gamemode = ""
+            try:
+                gm_raw = self._rcon_command(f"data get entity {name} playerGameType")
+                gm_match = re.search(r"(\d+)", gm_raw)
+                if gm_match:
+                    gamemode = gm_match.group(1)
+            except Exception:
+                pass
+
+            self._enriched_cache[name] = {"world": world, "coords": coords, "gamemode": gamemode}
         except Exception as e:
             self._log.debug("Failed to enrich player '{}': {}", name, e)
+
+    def _record_last_online(self, name: str, timestamp) -> None:
+        """Update ``last_online`` for *name* in ``whitelist_meta.json``."""
+        import json
+        import os
+        try:
+            meta_path = Path("whitelist_meta.json")
+            meta: dict = {}
+            if meta_path.is_file():
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if name in meta:
+                meta[name]["last_online"] = timestamp.strftime("%Y-%m-%d %H:%M")
+                # Atomic write
+                tmp = Path("whitelist_meta.json.tmp")
+                tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+                os.replace(str(tmp), str(meta_path))
+        except Exception:
+            pass  # best-effort, don't break join flow
 
     @staticmethod
     def _format_duration(seconds: float) -> str:
