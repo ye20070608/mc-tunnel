@@ -17,24 +17,58 @@ from api.middleware.csrf import csrf_protect, generate_csrf_token
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
 # ---------------------------------------------------------------------------
-# In-memory IP-based rate limiter for the login endpoint
+# Rate limiter — per-IP AND per-username (critical behind frp, where all
+# remote_addr look like 127.0.0.1).
 # ---------------------------------------------------------------------------
-_login_attempts: dict[str, list[float]] = {}
-_RATE_LIMIT_WINDOW: int = 60  # seconds
-_RATE_LIMIT_MAX: int = 10     # max attempts per window per IP
+_login_attempts: dict[str, list[float]] = {}       # IP → timestamps
+_username_attempts: dict[str, list[float]] = {}     # username → timestamps
+_USERNAME_LOCKOUT: dict[str, float] = {}             # username → locked until (epoch)
+_RATE_LIMIT_WINDOW: int = 60       # seconds
+_RATE_LIMIT_MAX: int = 10           # max attempts per window per IP
+_USERNAME_MAX: int = 5              # max failed attempts per username per window
+_USERNAME_LOCKOUT_SEC: int = 300    # lockout duration after exceeding _USERNAME_MAX
 
 
 def _rate_limit(ip: str) -> bool:
-    """Return True if the request is allowed, False if rate-limited."""
+    """Return True if the request is allowed, False if rate-limited (IP level)."""
     now: float = time.time()
     if ip not in _login_attempts:
         _login_attempts[ip] = []
-    # Prune entries outside the window
     _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < _RATE_LIMIT_WINDOW]
     if len(_login_attempts[ip]) >= _RATE_LIMIT_MAX:
         return False
     _login_attempts[ip].append(now)
     return True
+
+
+def _username_rate_limit(username: str) -> bool:
+    """Return True if login is allowed for this username, False if locked out.
+
+    After _USERNAME_MAX failed attempts within _RATE_LIMIT_WINDOW, the
+    username is locked for _USERNAME_LOCKOUT_SEC seconds.  This is the real
+    protection when the panel sits behind frp (all requests share the same IP).
+    """
+    now: float = time.time()
+    # Check lockout
+    locked_until = _USERNAME_LOCKOUT.get(username, 0)
+    if now < locked_until:
+        return False
+    # Prune + count recent failures
+    if username not in _username_attempts:
+        _username_attempts[username] = []
+    _username_attempts[username] = [t for t in _username_attempts[username] if now - t < _RATE_LIMIT_WINDOW]
+    if len(_username_attempts[username]) >= _USERNAME_MAX:
+        _USERNAME_LOCKOUT[username] = now + _USERNAME_LOCKOUT_SEC
+        return False
+    return True
+
+
+def _record_failed_attempt(username: str) -> None:
+    """Record a failed login attempt against *username*."""
+    now: float = time.time()
+    if username not in _username_attempts:
+        _username_attempts[username] = []
+    _username_attempts[username].append(now)
 
 
 def _check_admin_credentials(username: str, password: str) -> bool:
@@ -70,8 +104,9 @@ def _get_audit_logger():
 def login():
     """Authenticate with username + password, returning a JWT token.
 
-    Rate-limited per IP (default: 10 attempts / 60 seconds).
-    On success sets a ``jwt_token`` session cookie for page-based auth.
+    Rate-limited per IP (10 attempts / 60 s) AND per username
+    (5 failed attempts → 5 min lockout).  The username limiter is the
+    real defence when the panel sits behind frp.
     """
     ip: str = request.remote_addr or "unknown"
     if not _rate_limit(ip):
@@ -85,7 +120,18 @@ def login():
     if not username or not password:
         return jsonify({"error": "invalid_input", "message": "Username and password are required"}), 400
 
+    # Username-level lockout check (critical: IP-based limit is useless behind frp)
+    if not _username_rate_limit(username):
+        current_app.logger.warning(
+            "Login blocked — username '{}' is locked out (IP: {})", username, ip
+        )
+        return jsonify({
+            "error": "rate_limited",
+            "message": "Too many failed attempts for this account. Please wait 5 minutes.",
+        }), 429
+
     if not _check_admin_credentials(username, password):
+        _record_failed_attempt(username)
         # Add a small delay to frustrate timing-based enumeration
         time.sleep(0.5)
         return jsonify({"error": "auth_failed", "message": "Invalid username or password"}), 401
