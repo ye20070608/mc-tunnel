@@ -306,11 +306,18 @@ def save_config():
                         if "auth_pass" in mapping_data[key]:
                             raw["tunnel"]["mapping"][key]["auth_pass"] = mapping_data[key]["auth_pass"]
 
-        # Write back
-        config_path.write_text(
-            yaml.dump(raw, default_flow_style=False, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
+        # Atomic write: temp file → os.replace
+        import os
+        import tempfile
+        config_dir = str(config_path.parent)
+        fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".yaml")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                yaml.dump(raw, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            os.replace(tmp_path, str(config_path))
+        except Exception:
+            os.unlink(tmp_path)
+            raise
         current_app.logger.info("Configuration saved by setup wizard")
 
         # Reload tunnel config so frpc uses the latest settings

@@ -288,3 +288,32 @@ class WhitelistManager:
         if name in meta:
             del meta[name]
             self._write_meta(meta)
+
+    # ------------------------------------------------------------------
+    # Public API — last-online timestamp
+    # ------------------------------------------------------------------
+
+    def record_last_online(self, name: str, timestamp) -> None:
+        """Update ``last_online`` for *name* in ``whitelist_meta.json``.
+
+        Creates a minimal entry if the player isn't in the meta file yet.
+        The entire read-modify-write cycle is protected by ``_meta_lock``
+        to prevent TOCTOU races with whitelist add/remove operations.
+
+        Args:
+            name: Player name.
+            timestamp: A ``datetime`` object (or any object with a
+                ``strftime`` method).
+        """
+        try:
+            with self._meta_lock:
+                meta = self._read_meta()
+                if name not in meta:
+                    meta[name] = {}
+                meta[name]["last_online"] = timestamp.strftime("%Y-%m-%d %H:%M")
+                self._meta_path.write_text(
+                    json.dumps(meta, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+        except Exception:
+            pass  # best-effort, don't break join flow

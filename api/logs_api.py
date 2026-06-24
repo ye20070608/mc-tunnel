@@ -60,12 +60,22 @@ def export():
     packs them into an in-memory zip.  No truncation, no filtering.
     """
     try:
-        logs_dir = Path("logs")
+        logs_dir = Path("logs").resolve()
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             if logs_dir.is_dir():
                 for fp in sorted(logs_dir.iterdir()):
+                    # Skip symlinks to prevent reading outside logs/
+                    if fp.is_symlink():
+                        continue
                     if not fp.is_file():
+                        continue
+                    # Resolve to verify we stay within logs/
+                    try:
+                        resolved = fp.resolve()
+                        if not str(resolved).startswith(str(logs_dir)):
+                            continue
+                    except (OSError, ValueError):
                         continue
                     # Read as binary so .gz files stay intact
                     zf.write(fp, fp.name)

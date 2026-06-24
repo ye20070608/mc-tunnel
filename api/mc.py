@@ -10,6 +10,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from api.middleware.auth import jwt_required
 from api.middleware.csrf import csrf_protect
+from api.whitelist import _validate_player_name
 from core.audit.logger import AuditLogger
 
 mc_bp = Blueprint("mc", __name__, url_prefix="/api/mc")
@@ -139,6 +140,8 @@ def kick():
     player_name = (data or {}).get("name", "").strip()
     if not player_name:
         return jsonify({"error": "invalid_input", "message": "Player name is required"}), 400
+    if not _validate_player_name(player_name):
+        return jsonify({"error": "invalid_input", "message": "Invalid player name"}), 400
 
     adapter = _get_adapter()
     if adapter is None:
@@ -160,6 +163,8 @@ def op_player():
     player_name = (data or {}).get("name", "").strip()
     if not player_name:
         return jsonify({"error": "invalid_input", "message": "Player name is required"}), 400
+    if not _validate_player_name(player_name):
+        return jsonify({"error": "invalid_input", "message": "Invalid player name"}), 400
 
     adapter = _get_adapter()
     if adapter is None:
@@ -197,6 +202,8 @@ def deop_player():
     player_name = (data or {}).get("name", "").strip()
     if not player_name:
         return jsonify({"error": "invalid_input", "message": "Player name is required"}), 400
+    if not _validate_player_name(player_name):
+        return jsonify({"error": "invalid_input", "message": "Invalid player name"}), 400
 
     adapter = _get_adapter()
     if adapter is None:

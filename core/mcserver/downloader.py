@@ -254,7 +254,7 @@ MOJANG_MANIFEST_URL = (
 
 # Mojang 的 SSL 证书在某些网络环境（尤其是中国大陆）无法被 certifi 验证。
 # 使用 verify=False 回退策略，同时用 SHA1 校验保证下载文件完整性。
-_MOJANG_SSL_OK = True  # 首次尝试 verify=True，失败后切换
+# 注意：不再使用全局标志位，每次请求独立尝试 verify=True。
 
 
 def _mojang_request(url: str, stream: bool = False, timeout: int = 30) -> requests.Response:
@@ -262,17 +262,19 @@ def _mojang_request(url: str, stream: bool = False, timeout: int = 30) -> reques
 
     Tries ``verify=True`` first; falls back to ``verify=False`` with
     ``urllib3`` warning suppressed if the SSL handshake fails.
+    Each request retries independently — one failure does not disable
+    verification for subsequent requests.
     """
-    global _MOJANG_SSL_OK
     import urllib3
 
-    if _MOJANG_SSL_OK:
-        try:
-            return requests.get(url, timeout=timeout, stream=stream)
-        except requests.exceptions.SSLError:
-            _MOJANG_SSL_OK = False
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            logger.debug("Mojang SSL 校验失败，回退到非校验模式")
+    try:
+        return requests.get(url, timeout=timeout, stream=stream)
+    except requests.exceptions.SSLError:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        logger.warning(
+            "Mojang SSL 校验失败，回退到非校验模式（SHA1 完整性校验仍然有效）: {}",
+            url,
+        )
 
     return requests.get(url, timeout=timeout, stream=stream, verify=False)
 
@@ -374,7 +376,7 @@ def _ensure_mojang_jar(
             output_path=cache_path,
             expected_sha256="",  # Mojang 用 SHA1 而非 SHA256
             progress_callback=_mojang_progress,
-            verify=_MOJANG_SSL_OK,
+            verify=True,  # Always try SSL first per request
         )
         if show_progress:
             print()  # 换行
@@ -402,7 +404,13 @@ def _find_existing_jar(version: str, output_dir: str) -> Path | None:
     2. paper-*.jar（任何 PaperMC JAR）
     3. server.jar（通用命名）
     """
+    import re
     base = Path(output_dir)
+
+    # Validate version to prevent glob injection
+    if not re.match(r"^[\d.]+$", version):
+        logger.warning("Invalid version string for JAR search: {}", version)
+        return None
 
     # 精确版本匹配
     matches = list(base.glob(f"paper-{version}-*.jar"))

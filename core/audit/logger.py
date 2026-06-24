@@ -119,25 +119,46 @@ class AuditLogger:
         entries.reverse()
         return entries[:limit]
 
-    def export(self, output_path: str) -> str:
-        """Copy the audit log to *output_path*.
+    def export(self, output_path: str = "") -> str:
+        """Copy the audit log to a file inside ``logs/exports/``.
+
+        For security, the destination is always confined to the
+        ``logs/exports/`` directory regardless of the *output_path*
+        argument.  Only the *filename* portion of *output_path* is used.
 
         Args:
-            output_path: Destination file path.
+            output_path: Optional destination filename (directory
+                components are stripped).
 
         Returns:
-            The absolute (or provided) path of the copied file.
+            The absolute path of the copied file.
         """
+        from pathlib import Path
+
+        allowed_dir = Path("logs/exports").resolve()
+        allowed_dir.mkdir(parents=True, exist_ok=True)
+
+        # Only use the filename portion — strip any directory components
+        safe_name = Path(output_path).name if output_path else "audit_export.log"
+        if not safe_name:
+            safe_name = "audit_export.log"
+
+        target = (allowed_dir / safe_name).resolve()
+        # Verify the resolved path stays within allowed_dir
+        if not str(target).startswith(str(allowed_dir)):
+            self.logger.error("Audit export path rejected: {}", target)
+            target = allowed_dir / "audit_export.log"
+
         with self._lock:
             try:
-                shutil.copy2(self.log_path, output_path)
+                shutil.copy2(self.log_path, str(target))
             except OSError as exc:
                 self.logger.error("Failed to export audit log: {}", exc)
                 # If source doesn't exist, create an empty file at the target
                 if not os.path.isfile(self.log_path):
                     try:
-                        open(output_path, "w", encoding="utf-8").close()
+                        target.write_text("", encoding="utf-8")
                     except OSError:
                         pass
 
-        return output_path
+        return str(target)
