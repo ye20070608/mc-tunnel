@@ -498,7 +498,7 @@ function updatePlayers(data) {
   }
 
   var gamemodeNames = { '0': '🏕 生存', '1': '🎨 创造', '2': '⚔ 冒险', '3': '👁 旁观' };
-  var html = '<table class="data-table"><thead><tr><th>玩家名</th><th>所在世界</th><th>坐标</th><th>游戏模式</th><th>IP</th><th>在线时长</th><th>操作</th></tr></thead><tbody>';
+  var html = '<table class="data-table"><thead><tr><th>玩家名</th><th>所在世界</th><th>坐标</th><th>游戏模式</th><th>在线时长</th><th>操作</th></tr></thead><tbody>';
   // Use the in_whitelist field from the API — always accurate, no race condition
   for (var i = 0; i < players.length; i++) {
     var p = players[i];
@@ -521,7 +521,6 @@ function updatePlayers(data) {
       '<td>' + worldIcon + escapeHtml(p.world || '--') + '</td>' +
       '<td class="mono">' + escapeHtml(p.coords || '--') + '</td>' +
       '<td>' + gm + '</td>' +
-      '<td class="mono" style="font-size:10px;">' + escapeHtml(p.ip || '--') + '</td>' +
       '<td>' + escapeHtml(p.online_time || '--') + '</td>' +
       '<td>' + actions + '</td>' +
       '</tr>';
@@ -552,22 +551,14 @@ function updateWhitelist(data) {
     return;
   }
 
-  var html = '<table class="data-table"><thead><tr><th>状态</th><th>玩家名</th><th>IP</th><th>最后在线</th><th>添加日期</th><th>添加人</th><th>操作</th></tr></thead><tbody>';
+  var html = '<table class="data-table"><thead><tr><th>状态</th><th>玩家名</th><th>最后在线</th><th>添加日期</th><th>添加人</th><th>操作</th></tr></thead><tbody>';
   for (var i = 0; i < entries.length; i++) {
     var entry = entries[i];
     var name = entry.name || '';
     var onlineDot = entry.online ? '<span style="color:var(--success);" title="在线">🟢</span>' : '<span style="color:var(--muted);" title="离线">◌</span>';
-    // Show IP with online indicator, don't replace IP with HTML
-    var ipDisplay = entry.ip || '--';
-    if (entry.online && entry.ip) {
-      ipDisplay = '🟢 ' + entry.ip;
-    } else if (entry.online) {
-      ipDisplay = '🟢 在线';
-    }
     html += '<tr>' +
       '<td>' + onlineDot + '</td>' +
       '<td>🧑 ' + escapeHtml(name) + '</td>' +
-      '<td class="mono" style="font-size:10px;">' + escapeHtml(ipDisplay) + '</td>' +
       '<td>' + escapeHtml(entry.last_online || '--') + '</td>' +
       '<td>' + escapeHtml(entry.added_at || '--') + '</td>' +
       '<td>' + escapeHtml(entry.added_by || '--') + '</td>' +
