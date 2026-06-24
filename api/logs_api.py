@@ -3,6 +3,8 @@
 All endpoints require JWT authentication.
 """
 
+import io
+import zipfile
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, Response
@@ -51,23 +53,30 @@ def recent():
 @logs_bp.route("/export", methods=["GET"])
 @jwt_required
 def export():
-    """Export the FULL server log file as a downloadable plain-text file.
+    """Export ALL log files as a downloadable ZIP archive.
 
-    Reads ``logs/latest.log`` entirely — no truncation, no filtering.
+    Collects every file under the ``logs/`` directory (``latest.log``,
+    ``audit.log``, ``mc-tunnel.log``, rotated ``*.log.gz``, etc.) and
+    packs them into an in-memory zip.  No truncation, no filtering.
     """
     try:
-        log_path = Path("logs/latest.log")
-        if log_path.is_file():
-            raw = log_path.read_text(encoding="utf-8", errors="replace")
-        else:
-            raw = ""
+        logs_dir = Path("logs")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            if logs_dir.is_dir():
+                for fp in sorted(logs_dir.iterdir()):
+                    if not fp.is_file():
+                        continue
+                    # Read as binary so .gz files stay intact
+                    zf.write(fp, fp.name)
 
+        data = buf.getvalue()
         return Response(
-            raw,
-            mimetype="text/plain; charset=utf-8",
+            data,
+            mimetype="application/zip",
             headers={
-                "Content-Disposition": "attachment; filename=server_logs.txt",
-                "Content-Length": str(len(raw.encode("utf-8"))),
+                "Content-Disposition": "attachment; filename=server_logs_all.zip",
+                "Content-Length": str(len(data)),
             },
         )
     except Exception as e:
