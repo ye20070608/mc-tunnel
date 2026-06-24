@@ -2,7 +2,28 @@
 
 ## [Unreleased]
 
-### Added (2026-06-24)
+### Added (2026-06-25)
+- **安全加固 — 18 项修复**：全面安全审计后修复（详见下方 Security 条目）
+- **日志导出增强**：导出所有 `logs/` 文件为 ZIP 包（含 `.gz` 轮转文件、审计日志、隧道日志）
+- **日志原始展示**：日志 Tab 显示原始控制台文本行（与 cmd 窗口一致），导出全量不截断
+- **白名单最后在线**：`whitelist.py:record_last_online()` 记录玩家退出时间，锁保护原子写入
+
+### Security (2026-06-25)
+- **#1 世界名路径穿越**：`validate_world_name()` 拒绝 `../`、`/`、`\`（`worlds.py` + `api/server.py`）
+- **#2 日志导出 symlink 穿越**：`is_symlink()` 跳过 + `resolve()` 验证在 `logs/` 内（`logs_api.py`）
+- **#3 世界迁移跳过列表**：拒绝隐藏目录，要求 `level.dat` 确认是真实世界（`worlds.py`）
+- **#4 glob 注入**：版本号正则 `^[\d.]+$` 校验后入 glob（`adapter.py` + `downloader.py`）
+- **#5 SSL 全局回退**：删除 `_MOJANG_SSL_OK`，每次请求独立尝试验证（`downloader.py`）
+- **#6 白名单 meta TOCTOU**：`record_last_online()` 移入 `WhitelistManager`，全读写锁保护（`whitelist.py` + `adapter.py`）
+- **#7/8 配置原子写入**：`tempfile.mkstemp` + `os.replace` 防文件损坏（`loader.py` + `admin.py`）
+- **#9/13/15 server.properties 原子写**：三处写入均原子化（`worlds.py` + `api/server.py`）
+- **#10 Java 路径跨平台**：`%ProgramFiles%` / `%ProgramW6432%` 替代硬编码（`java.py`）
+- **#11 玩家名输入校验**：kick/op/deop 端点添加 `_validate_player_name()`（`api/mc.py`）
+- **#12 审计日志导出限制**：限制到 `logs/exports/` 目录（`audit/logger.py`）
+- **#14 工作目录依赖**：启动时 `os.chdir(PROJECT_ROOT)`（`main.py`）
+- **#16 Path 类型一致**：ConfigManager 统一存储 `Path` 对象（`loader.py`）
+
+### Changed (2026-06-24)
 - **玩家管理增强**：显示所在世界（🌍主世界/🔥地狱/🌑末地）、坐标、在线时长（adapter.py + app.js）
 - **OP 管理员设置**：玩家列表每行绿色 OP 按钮，支持设置/撤销服务器管理员（api/mc.py deop 端点）
 - **世界管理**：WorldManager — worlds/ 目录统一存储，三维度分组（主世界/地狱/末地），自动迁移旧世界

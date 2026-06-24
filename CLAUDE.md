@@ -58,8 +58,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | frpc 输出重复 | `client.py:116` | `stderr=subprocess.STDOUT` 合并管道，解决樱花 frpc 同时写 stdout+stderr |
 | frpc 重复启动 | `app.js:949` + `api/tunnel.py:48` | 前端 `_frpcActionLock` 互斥锁 + 后端去竞态 |
 | OP 管理 | `adapter.py:op_player/deop` + `api/mc.py:deop` | 绿色按钮支持设置/撤销管理员 |
-| 玩家详情 | `adapter.py:_enrich_player` | RCON 获取世界+坐标，控制台追踪在线时长 |
+| 玩家详情 | `adapter.py:_enrich_player` | RCON 获取世界+坐标+游戏模式，控制台追踪在线时长 |
+| 白名单最后在线 | `whitelist.py:record_last_online` | 玩家退出时记录时间戳，锁保护防 TOCTOU 竞态 |
 | 樱花启动器冲突 | 文档警告 | `SakuraFrpService.exe` 与我们的 frpc 不能同时运行 |
+| 世界名路径穿越 | `worlds.py` + `api/server.py` | `validate_world_name()` 拒绝 `../`、`/`、`\`（#1 高危） |
+| 日志导出 symlink 穿越 | `logs_api.py` | `is_symlink()` 跳过 + `resolve()` 路径验证（#2 高危） |
+| glob 注入 | `adapter.py` + `downloader.py` | 版本号正则 `^[\d.]+$` 校验后入 glob（#4 高危） |
+| SSL 全局回退 | `downloader.py` | 删除 `_MOJANG_SSL_OK` 全局变量，每次请求独立验证（#5 高危） |
+| 世界迁移跳过列表 | `worlds.py` | 拒绝隐藏目录，要求 `level.dat`（#3 高危） |
+| 配置/密码原子写入 | `loader.py` + `admin.py` | `tempfile.mkstemp` + `os.replace` 防文件损坏（#7/8 中危） |
+| server.properties 原子写 | `worlds.py` + `api/server.py` | 三处 server.properties 写入均原子化（#9/13/15 中危） |
+| Java 路径跨平台 | `java.py` | `%ProgramFiles%` / `%ProgramW6432%` 替代硬编码（#10 中危） |
+| 玩家名输入校验 | `api/mc.py` | kick/op/deop 端点添加 `_validate_player_name()`（#11 中危） |
+| 审计日志导出限制 | `audit/logger.py` | 限制到 `logs/exports/` 目录（#12 中危） |
+| 工作目录依赖 | `main.py` | 启动时 `os.chdir(PROJECT_ROOT)`（#14 低危） |
+| Path 类型一致 | `loader.py` | ConfigManager 统一存储 `Path` 对象（#16 低危） |
 
 ### ⚠️ 樱花穿透冲突警告
 
