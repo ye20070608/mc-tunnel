@@ -70,3 +70,7 @@ logs/
 Thumbs.db
 .DS_Store
 Desktop.ini
+
+# Claude Code / OMC local state (per-user, not project code)
+.claude/settings.local.json
+.omc/
