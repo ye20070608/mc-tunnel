@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 当前状态：阶段 1-5 完成，阶段 6 进行中（Bug 修复与功能增强）
 
-**36+ Python 源文件** 覆盖阶段 1-5 全部功能：
+**46 个 Python 源文件** 覆盖阶段 1-5 全部功能：
 
 | 阶段 | 状态 | 内容 |
 |------|------|------|
@@ -123,6 +123,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Web 服务 | Flask 单端口 HTTPS（8443），介绍页 + 管理后台 + API 统一路由 | `Project.md` §3.3 |
 | 鉴权体系 | BCrypt 多用户 + JWT + CSRF + 速率限制 + 操作审计 | `Project.md` §6 |
 
+### 依赖注入模式
+
+Flask 蓝图通过 `current_app` 访问核心服务，而非全局变量：
+
+```
+main.py 构造实例  →  web/server.py:create_admin_app()
+    →  api/router.py:register_routes(app, mc_adapter, tunnel_manager, audit_logger, config_manager)
+        →  存储为 app.mc_adapter / app.tunnel_manager / app.audit_logger / app.config_manager
+            →  各蓝图视图通过 current_app.mc_adapter 等访问
+```
+
+添加新 API 端点时，遵循此模式：在 `register_routes` 中注入依赖，在蓝图中通过 `current_app.<attr>` 获取。
+
+### frp 双模式
+
+隧道模块同时支持两种 frp 服务商，由配置自动切换：
+
+| 模式 | 识别条件 | 认证方式 | 配置生成差异 |
+|------|---------|---------|------------|
+| **标准 frp** | `tunnel.token` 非空，`tunnel.user` 为空 | `token` 认证 | `[common]` 写 `token =` |
+| **樱花 Frp** | `tunnel.user` 非空 | `user` + `auth_pass` 双因子 | 强制 `sakura_mode = true`，每个代理写 `auth_pass`，`local_ip = 127.0.0.1` |
+
+切换只需修改 `config.yaml` 中 `tunnel.user` / `tunnel.token` 字段，`FrpConfigGenerator.generate()` 自动检测并生成对应格式。
+
+
+
 ---
 
 ## 开发工作流
@@ -144,7 +170,7 @@ venv\Scripts\python main.py --version 1.21  # 跳过交互式版本选择
 
 # 测试
 pytest tests/ --cov                          # 全部测试 + 覆盖率
-pytest tests/test_web_api.py -v              # 单个测试文件（34 项集成测试）
+python tests/test_web_api.py                 # 集成测试（24 项 check，standalone 脚本 + mock 依赖）
 
 # 代码质量
 ruff format --check .          # 格式化检查
@@ -164,13 +190,14 @@ mypy core/ api/                # 类型检查（核心模块）
 
 ### 配置
 
-`config/config.yaml` 六个顶层键：`mc` / `web` / `admins` / `tunnel` / `world` / `intro`。详见 `Project.md` §5.1 和 `config/loader.py` 数据类定义。关键点：
+`config/config.yaml` 五个顶层键（对应 `Config` dataclass）：`mc` / `web` / `admins` / `tunnel` / `world`。另外 `intro` 是可选的自定义段（用于介绍页的服务器名称、规则等文本），由 `_make_common_data()` 读取但不在 dataclass 中建模。详见 `Project.md` §5.1 和 `config/loader.py` 数据类定义。关键点：
 - 首次运行自动从 `config/defaults.yaml` 复制模板，打印提示后退出
 - 首次运行自动设置默认管理员 `admin/admin`（BCrypt），登录后应修改
 - 启动前校验端口冲突 + Java 版本兼容性（JDK 17+）
 - 内部 API 仅监听 `127.0.0.1`，管理 API 全部经鉴权中间件
-- 支持通过 `ConfigManager` 运行时修改配置（如密码变更）
+- 支持通过 `ConfigManager` 运行时修改配置（如密码变更），所有写入使用 `tempfile.mkstemp` + `os.replace` 原子化
 - `web.ssl_enabled` 默认 true，首次启动自动生成自签名证书到 `config/certs/`
+- `world` 段驱动 `server.properties` 生成（通过 `core/mcserver/properties.py` 的 `ServerPropertiesGenerator`），含 gamemode/difficulty/pvp/online_mode/view_distance 等 15+ 字段
 
 ### API 约定
 
@@ -185,7 +212,7 @@ mypy core/ api/                # 类型检查（核心模块）
 ```
 MC服务器/
 ├── main.py                        # ✓ 入口引导（日志→配置→Java→JAR→EULA→就绪）
-├── requirements.txt               # ✓ 17 个 Python 依赖
+├── requirements.txt               # ✓ 18 个 Python 依赖
 ├── config/
 │   ├── __init__.py
 │   ├── loader.py                  # ✓ YAML 加载/校验/ConfigManager（含密码修改）
@@ -199,6 +226,7 @@ MC服务器/
 │   │   ├── status.py              # ✓ MC 状态采集（TPS/MOTD/在线人数/进程指标）
 │   │   ├── whitelist.py           # ✓ RCON 白名单管理（WhitelistManager）
 │   │   ├── worlds.py              # ✓ 世界管理（worlds/ 目录 + 三维度分组 + 迁移）
+│   │   ├── properties.py          # ✓ server.properties 生成器（从 WorldConfig）
 │   │   ├── downloader.py          # ✓ PaperMC API 下载（含 SHA256 校验）
 │   │   ├── java.py                # ✓ Java 检测与版本校验（4 级查找策略）
 │   │   └── eula.py                # ✓ Mojang EULA 确认
@@ -213,8 +241,7 @@ MC服务器/
 │   │   └── stats.py               # ✓ 连接数和流量统计（线程安全）
 │   ├── audit/
 │   │   └── logger.py              # ✓ 审计日志（JSON Lines/按操作者过滤/导出）
-│   └── ssl/
-│       └── __init__.py            # ✓ 自签名 SSL 证书自动生成（首次启动）
+│   └── ssl.py                     # ✓ 自签名 SSL 证书自动生成（首次启动，RSA 2048 + X.509）
 ├── api/
 │   ├── __init__.py
 │   ├── router.py                  # ✓ 蓝图注册 + 依赖注入
@@ -239,7 +266,7 @@ MC服务器/
 │       ├── style.css              # ✓ 像素传奇设计系统（CSS 变量/Dark 主题）
 │       └── app.js                 # ✓ 前端 JS（API 客户端/轮询器/CSRF/标签切换/服务器操作）
 ├── tests/
-│   └── test_web_api.py            # ✓ 集成测试（34 项：认证/CSRF/API/白名单/日志/隧道/边界）
+│   └── test_web_api.py            # ✓ 集成测试（24 项 check：认证/CSRF/API/白名单/日志/隧道/边界，standalone 脚本 + mock 依赖）
 ├── docs/
 │   ├── DECISIONS.md               # ✓ 技术选型（10 项决策）
 │   ├── user-guide.md              # ✓ 用户手册（10 章/567 行）

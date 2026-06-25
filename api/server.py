@@ -288,7 +288,7 @@ def server_info():
     # Read online-mode from actual server.properties, not config
     online_mode = True  # safe default
     try:
-        props_path = Path("server.properties")
+        props_path = Path("server/server.properties")
         if props_path.exists():
             for line in props_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
@@ -348,7 +348,7 @@ def update_settings():
         new_val = bool(data["online_mode"])
         # Update server.properties
         from pathlib import Path
-        props_path = Path("server.properties")
+        props_path = Path("server/server.properties")
         if props_path.exists():
             lines = props_path.read_text(encoding="utf-8").splitlines()
             found = False

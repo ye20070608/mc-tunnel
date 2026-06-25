@@ -37,7 +37,7 @@ class WorldManager:
     WORLD_MARKERS = ("level.dat", "session.lock")
     DIM_SUFFIXES = ("_nether", "_the_end")
 
-    def __init__(self, server_dir: str | Path = ".") -> None:
+    def __init__(self, server_dir: str | Path = "server") -> None:
         self._server_dir = Path(server_dir).resolve()
         self._worlds_dir = self._server_dir / "worlds"
 

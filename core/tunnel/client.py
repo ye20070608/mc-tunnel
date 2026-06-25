@@ -31,7 +31,7 @@ class FrpClient:
         client.stop()
     """
 
-    CONFIG_PATH: str = "frpc.ini"
+    CONFIG_PATH: str = "frp/frpc.ini"
 
     def __init__(
         self,

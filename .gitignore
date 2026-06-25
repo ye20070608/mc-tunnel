@@ -26,13 +26,41 @@ build/
 *.swp
 *.swo
 
-# MC 服务端（运行时下载，不纳入仓库）
-server*.jar
+# MC 服务端运行时（server/ 子目录，不纳入仓库）
+# New locations (after migration)
+server/paper*.jar
+server/server.jar
+server/cache/
+server/eula.txt
+server/worlds/
+server/world/
+server/world_nether/
+server/world_the_end/
+server/plugins/
+server/mods/
+server/server.properties
+server/banned-ips.json
+server/banned-players.json
+server/ops.json
+server/whitelist.json
+server/whitelist_meta.json
+server/usercache.json
+server/bukkit.yml
+server/spigot.yml
+server/commands.yml
+server/help.yml
+server/permissions.yml
+server/version_history.json
+server/libraries/
+server/versions/
+server/logs/
+# Legacy root-level locations (before migration — remove once migrated)
 paper*.jar
+server*.jar
 cache/
 eula.txt
-worlds/                          # 世界存档（统一管理）
-world/                           # 旧版世界目录（已迁移）
+worlds/
+world/
 world_nether/
 world_the_end/
 plugins/
@@ -42,11 +70,30 @@ banned-ips.json
 banned-players.json
 ops.json
 whitelist.json
+whitelist_meta.json
 usercache.json
+bukkit.yml
+spigot.yml
+commands.yml
+help.yml
+permissions.yml
+version_history.json
+libraries/
+versions/
 
-# frp 二进制（运行时下载，不纳入仓库）
+# frp 运行时（frp/ 子目录，不纳入仓库）
+# New locations (after migration)
+frp/frpc*
+frp/frps*
+frp/frpc.ini
+frp/*.crt
+frp/*.key
+# Legacy root-level locations (before migration — remove once migrated)
 frpc*
 frps*
+frpc.ini
+*.crt
+*.key
 
 # 运行时生成
 config/config.yaml              # 用户本地配置

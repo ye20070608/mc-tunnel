@@ -112,7 +112,7 @@ def players():
         whitelisted_names: set[str] = set()
         try:
             import json
-            wl_path = Path("whitelist.json")
+            wl_path = Path("server/whitelist.json")
             if wl_path.is_file():
                 wl_data = json.loads(wl_path.read_text(encoding="utf-8"))
                 if isinstance(wl_data, list):

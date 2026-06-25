@@ -86,7 +86,7 @@ class FrpConfigGenerator:
 
         return "\n".join(lines)
 
-    def write(self, path: str = "frpc.ini") -> str:
+    def write(self, path: str = "frp/frpc.ini") -> str:
         """Write generated frpc.ini to a file.
 
         Args:
