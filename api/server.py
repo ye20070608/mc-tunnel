@@ -96,7 +96,7 @@ def download_version():
             ensure_server_jar(
                 version=version,
                 server_jar_path="",
-                output_dir=".",
+                output_dir="server",
                 show_progress=True,
             )
         except Exception as e:
