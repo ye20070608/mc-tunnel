@@ -97,7 +97,7 @@ def download_version():
                 version=version,
                 server_jar_path="",
                 output_dir=".",
-                show_progress=False,
+                show_progress=True,
             )
         except Exception as e:
             current_app.logger.error("Background download failed: {}", e)

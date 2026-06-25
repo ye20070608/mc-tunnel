@@ -192,7 +192,15 @@ def download_jar(
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    resp = requests.get(download_url, stream=True, timeout=300, verify=verify)
+    try:
+        resp = requests.get(download_url, stream=True, timeout=300, verify=verify)
+    except requests.exceptions.SSLError:
+        if not verify:
+            raise
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        logger.warning("SSL 校验失败，回退到非校验模式: {}", download_url)
+        resp = requests.get(download_url, stream=True, timeout=300, verify=False)
     resp.raise_for_status()
 
     total = int(resp.headers.get("content-length", 0))
