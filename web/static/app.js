@@ -978,9 +978,12 @@ async function deleteWorld(name) {
 }
 
 async function activateWorld(name) {
+  if (!confirm('切换到世界 "' + name + '"？\n\n切换世界后需要重启服务器才能生效。\n如果服务器正在运行，玩家会被断开。')) return;
   try {
     var data = await apiCall('/api/server/worlds/activate', 'POST', { name: name });
-    showToast(data.message || '活跃世界已切换');
+    var msg = data.message || '活跃世界已切换';
+    if (data.restart_required) msg = msg + ' — 请重启服务器生效';
+    showToast(msg);
     loadWorlds();
     loadServerCenter();
   } catch (err) {

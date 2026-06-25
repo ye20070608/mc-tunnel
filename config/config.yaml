@@ -1,10 +1,10 @@
 mc:
-  version: 1.20.1
+  version: 1.21.11
   port: 25565
   max_players: 20
   java_path: ''
   jvm_args: -Xmx4G -Xms2G
-  server_jar: ''
+  server_jar: D:\Visual Studio programs\MC服务器\server\paper-1.21.11-69.jar
   auto_restart: true
   restart_max_retries: 3
 web:
