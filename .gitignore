@@ -29,6 +29,9 @@ build/
 # MC 服务端运行时（server/ 子目录）
 server/paper*.jar
 server/server.jar
+# Safety net — root-level jars should never exist (all go to server/)
+/paper*.jar
+/server.jar
 server/cache/
 server/eula.txt
 server/worlds/
