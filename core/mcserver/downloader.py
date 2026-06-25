@@ -479,8 +479,12 @@ def ensure_server_jar(
     if existing:
         size_mb = existing.stat().st_size / (1024 * 1024)
         logger.info(f"服务端 JAR 已存在: {existing.name} ({size_mb:.1f} MB)")
-        # 即使 JAR 已存在，也需要确保 Mojang 原版 JAR 已缓存
-        _ensure_mojang_jar(version, output_dir, show_progress)
+        # 预下载 Mojang 原版 JAR 到 cache/（后台线程，不阻塞主启动流程）
+        threading.Thread(
+            target=_ensure_mojang_jar,
+            args=(version, output_dir, show_progress),
+            daemon=True,
+        ).start()
         _mark_progress_done()
         return existing.resolve()
 
@@ -528,8 +532,12 @@ def ensure_server_jar(
         logger.error(str(e))
         raise
 
-    # 预下载 Mojang 原版 JAR 到 cache/，避免 Paperclip 用 Java 下载时 SSL 失败
-    _ensure_mojang_jar(version, output_dir, show_progress)
+    # 预下载 Mojang 原版 JAR 到 cache/（后台线程，不阻塞主启动流程）
+    threading.Thread(
+        target=_ensure_mojang_jar,
+        args=(version, output_dir, show_progress),
+        daemon=True,
+    ).start()
 
     _mark_progress_done()
     return output_path.resolve()
