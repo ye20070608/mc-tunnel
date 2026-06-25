@@ -382,19 +382,19 @@ class WorldManager:
                         staging.rename(entry)
                     raise
 
-        # ── Update level-name after migration ──
-        if migrated > 0:
-            active = self._get_active_world()
-            # Fix root-level level-name → nested
-            if active and not active.startswith("worlds/") and not active.startswith("worlds\\"):
-                self._set_active_world(self._make_level_name(active))
-            # Fix old flat worlds/ level-name → nested
-            elif active:
-                extracted = self._extract_world_name(active)
-                # If the level-name doesn't end with /world, fix it
-                normalized = active.replace("\\", "/")
-                if not normalized.endswith("/world"):
-                    self._set_active_world(self._make_level_name(extracted))
+        # ── Update level-name after migration (always, even if dirs were
+        # already migrated — server.properties may be out of sync) ──
+        active = self._get_active_world()
+        if active:
+            extracted = self._extract_world_name(active)
+            normalized = active.replace("\\", "/")
+            needs_fix = (
+                not normalized.startswith("worlds/")
+                or not normalized.endswith("/world")
+            )
+            if needs_fix:
+                correct = self._make_level_name(extracted)
+                self._set_active_world(correct)
 
         return migrated
 
