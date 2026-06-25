@@ -874,6 +874,9 @@ function updateServerCenter(data) {
   setHtml('#sc-ip', d.lan_address || (d.local_ip + ':' + d.port));
   setHtml('#sc-port', String(d.port));
   setHtml('#sc-version', d.version || '--');
+  // Also sync version to sidebar footer (which is otherwise static)
+  var sf = document.querySelector('.sidebar-footer');
+  if (sf && d.version) sf.textContent = 'v' + d.version;
   setHtml('#sc-world', d.active_world || '--');
   setHtml('#sc-online', d.online_mode ? '正版验证 ✓' : '离线模式 (局域网可用)');
 

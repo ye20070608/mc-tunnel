@@ -145,13 +145,20 @@ def create_app(config: dict, logger) -> Flask:
     @app.after_request
     def _log_api(response):
         if request.path.startswith("/api/") and logger is not None:
-            logger.info(
-                "API: {} {} → {} ({}ms)",
-                request.method,
-                request.path,
-                response.status_code,
-                request.endpoint or "-",
-            )
+            if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+                logger.info(
+                    "API: {} {} → {}",
+                    request.method,
+                    request.path,
+                    response.status_code,
+                )
+            else:
+                logger.debug(
+                    "API: {} {} → {}",
+                    request.method,
+                    request.path,
+                    response.status_code,
+                )
         return response
 
     # --- Error handlers (return JSON for API paths, HTML otherwise) ---
