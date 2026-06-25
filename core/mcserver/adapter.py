@@ -281,6 +281,17 @@ class MCServerAdapter:
                         target=self._enrich_player, args=(name,), daemon=True
                     ).start()
 
+            # Refresh last_online for every online player so the UI always
+            # shows "now" while they are connected — even if they were already
+            # online at server start or joined hours ago.
+            if players:
+                try:
+                    wm = WhitelistManager(self)
+                    for p in players:
+                        wm.record_last_online(p["name"], now)
+                except Exception:
+                    pass
+
             return players
         except Exception as e:
             self._log.warning("Failed to get player list: {}", e)
@@ -315,6 +326,11 @@ class MCServerAdapter:
             self._player_join_times.pop(name, None)
             self._enriched_cache.pop(name, None)
             self._last_enrich.pop(name, None)
+            # Record last-online on leave for accurate time tracking
+            try:
+                WhitelistManager(self).record_last_online(name, now)
+            except Exception:
+                pass
             return
 
         # "Steve[/192.168.1.5:54321] logged in with entity id ..."
