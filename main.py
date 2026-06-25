@@ -131,107 +131,6 @@ def _interactive_select_version() -> str:
     return versions[0]
 
 
-def _migrate_root_layout() -> None:
-    """Move existing MC server and frp files from root into server/ and frp/.
-
-    This migration runs once to transition from the old flat root-directory
-    layout to the new organised subdirectory layout.  It is idempotent —
-    subsequent runs skip the migration if ``server/server.properties``
-    already exists.
-    """
-    import shutil
-
-    root = Path.cwd()
-    server_dir = root / "server"
-    frp_dir = root / "frp"
-
-    # Idempotency guard: skip if the server directory already has the key file
-    if (server_dir / "server.properties").exists():
-        logger.debug("Server directory layout already migrated, skipping")
-        return
-
-    logger.info("迁移根目录文件到 server/ 和 frp/ 子目录...")
-
-    server_dir.mkdir(parents=True, exist_ok=True)
-    frp_dir.mkdir(parents=True, exist_ok=True)
-
-    # ── MC server loose files ──
-    _MC_FILES = [
-        "paper-*.jar", "server.jar", "server.properties", "eula.txt",
-        "ops.json", "whitelist.json", "whitelist_meta.json",
-        "usercache.json", "banned-ips.json", "banned-players.json",
-        "bukkit.yml", "spigot.yml", "commands.yml", "help.yml",
-        "permissions.yml", "version_history.json",
-    ]
-    for pattern in _MC_FILES:
-        for f in root.glob(pattern):
-            if not f.is_file():
-                continue
-            target = server_dir / f.name
-            if not target.exists():
-                shutil.move(str(f), str(target))
-                logger.debug("  移动: {} → {}", f.name, target)
-
-    # ── MC server directories ──
-    _MC_DIRS = ["cache", "libraries", "plugins", "versions", "mods",
-                 "world", "world_nether", "world_the_end", "worlds"]
-    for dirname in _MC_DIRS:
-        src = root / dirname
-        if src.is_dir() and not src.is_symlink():
-            dst = server_dir / dirname
-            if not dst.exists():
-                shutil.move(str(src), str(dst))
-                logger.debug("  移动目录: {} → {}", dirname, dst)
-
-    # ── frp files ──
-    for pattern in ["frpc*", "frps*"]:
-        for f in root.glob(pattern):
-            if not f.is_file():
-                continue
-            target = frp_dir / f.name
-            if not target.exists():
-                shutil.move(str(f), str(target))
-                logger.debug("  移动: {} → {}", f.name, target)
-
-    # frpc.ini (may not match frpc* if it has no extension variant)
-    frpc_ini = root / "frpc.ini"
-    if frpc_ini.is_file():
-        target = frp_dir / "frpc.ini"
-        if not target.exists():
-            shutil.move(str(frpc_ini), str(target))
-            logger.debug("  移动: frpc.ini → {}", target)
-
-    # SSL cert/key files (user's own frp certs, not the app's)
-    for pattern in ["*.crt", "*.key"]:
-        for f in root.glob(pattern):
-            if not f.is_file():
-                continue
-            target = frp_dir / f.name
-            if not target.exists():
-                shutil.move(str(f), str(target))
-                logger.debug("  移动: {} → {}", f.name, target)
-
-    # ── Old MC log (if it was at root-level logs/latest.log) ──
-    old_mc_log = root / "logs" / "latest.log"
-    if old_mc_log.is_file():
-        server_logs_dir = server_dir / "logs"
-        server_logs_dir.mkdir(parents=True, exist_ok=True)
-        target = server_logs_dir / "latest.log"
-        if not target.exists():
-            shutil.move(str(old_mc_log), str(target))
-            logger.debug("  移动: logs/latest.log → {}", target)
-
-    # ── Clean up junk / temp files ──
-    _JUNK = ["paper-*.jar.tmp", "hs_err_pid*.log", "test_frpc_*.log", "=42.0"]
-    for pattern in _JUNK:
-        for f in root.glob(pattern):
-            if f.is_file():
-                f.unlink(missing_ok=True)
-                logger.debug("  清理: {}", f.name)
-
-    logger.info("根目录布局迁移完成")
-
-
 def main() -> None:
     """主入口。"""
     args = _parse_args()
@@ -240,9 +139,6 @@ def main() -> None:
     setup_logger("INFO", "logs")
     logger.info("=" * 50)
     logger.info("MC隧道控制器 (mc-tunnel) 启动中...")
-
-    # ── 1.5 迁移根目录布局 ─────────────────────────────────
-    _migrate_root_layout()
 
     # ── 2. 加载配置 ───────────────────────────────────────────
     # load_config 首次运行时会创建配置文件并退出
