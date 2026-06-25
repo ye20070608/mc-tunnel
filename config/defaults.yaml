@@ -54,7 +54,7 @@ tunnel:
 
 # 世界配置（生成 server.properties）
 world:
-  level_name: "worlds/world"           # 活跃世界路径
+  level_name: "worlds/world/world"     # 活跃世界路径
   seed: ""                             # 留空 = 随机种子
   gamemode: "survival"                 # survival / creative / adventure / spectator
   difficulty: "easy"                   # peaceful / easy / normal / hard
