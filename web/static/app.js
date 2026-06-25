@@ -900,7 +900,10 @@ function updateServerCenter(data) {
     vhtml += '<div class="version-item">' +
       '<span class="version-name">' + escapeHtml(ver.file_name) +
       ' (' + ver.size_mb + ' MB)' + activeBadge + '</span>' +
+      '<div style="display:flex;gap:6px;">' +
       (ver.active ? '' : '<button class="btn btn-secondary btn-xs" onclick="switchVersion(\'' + escapeHtml(ver.version) + '\')">切换到此版本</button>') +
+      '<button class="btn btn-secondary btn-xs" onclick="openPluginModal(\'' + escapeHtml(ver.version) + '\')" title="管理此版本的插件">📦 插件</button>' +
+      '</div>' +
       '</div>';
   }
   setHtml('#version-list', vhtml || '<div class="empty-state"><p>未检测到已安装版本</p></div>');
@@ -1124,6 +1127,130 @@ async function downloadVersion() {
 
   // Safety timeout: stop polling after 10 minutes
   setTimeout(function() { clearInterval(progressTimer); }, 600000);
+}
+
+/* =================================================================
+   Module: Plugin Management
+   ================================================================= */
+
+function openPluginModal(version) {
+  openModal('modal-plugins');
+  // All versions share the same server/plugins/ directory,
+  // but the version context is available for future expansion.
+  loadPluginList();
+}
+
+async function loadPluginList() {
+  var list = document.getElementById('plugin-list');
+  if (!list) return;
+  list.innerHTML = '<div class="empty-state"><p>加载中...</p></div>';
+  try {
+    var data = await apiCall('/api/server/plugins', 'GET');
+    updatePluginList(data);
+  } catch (err) {
+    list.innerHTML = '<div class="empty-state"><p>加载失败: ' + escapeHtml(err.message || '网络错误') + '</p></div>';
+  }
+}
+
+function updatePluginList(data) {
+  var list = document.getElementById('plugin-list');
+  var count = document.getElementById('plugin-count');
+  if (!list) return;
+  var plugins = data.plugins || [];
+  if (count) count.textContent = String(plugins.length);
+
+  if (plugins.length === 0) {
+    list.innerHTML = '<div class="empty-state"><p>暂无插件</p><p style="font-size:10px;color:var(--muted);">使用上方文件选择器上传 .jar 插件文件</p></div>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < plugins.length; i++) {
+    var p = plugins[i];
+    var statusBadge = p.disabled
+      ? '<span class="pill pill-danger" style="font-size:8px;">已禁用</span>'
+      : '<span class="pill pill-success" style="font-size:8px;">运行中</span>';
+    var metaHtml = '<div style="font-size:10px;color:var(--muted);margin-top:2px;">';
+    if (p.name) metaHtml += escapeHtml(p.name);
+    if (p.version) metaHtml += ' v' + escapeHtml(String(p.version));
+    if (p.author) metaHtml += ' &middot; ' + escapeHtml(String(p.author));
+    metaHtml += ' &middot; ' + p.size_kb + ' KB</div>';
+
+    html += '<div class="plugin-item">' +
+      '<div class="plugin-info">' +
+      '<div>' + statusBadge + ' <strong>' + escapeHtml(p.display_name) + '</strong></div>' +
+      metaHtml +
+      (p.description ? '<div style="font-size:10px;color:var(--muted);margin-top:2px;">' + escapeHtml(p.description) + '</div>' : '') +
+      '</div>' +
+      '<div class="plugin-actions">' +
+      '<button class="btn btn-secondary btn-xs" onclick="togglePlugin(\'' + encodeAttr(p.filename) + '\')">' +
+      (p.disabled ? '启用' : '禁用') + '</button>' +
+      '<button class="btn btn-danger btn-xs" onclick="deletePlugin(\'' + encodeAttr(p.filename) + '\')">删除</button>' +
+      '</div>' +
+      '</div>';
+  }
+  list.innerHTML = html;
+}
+
+async function uploadPlugin() {
+  var input = document.getElementById('plugin-upload-input');
+  var statusEl = document.getElementById('plugin-upload-status');
+  var btn = document.getElementById('btn-upload-plugin');
+  if (!input || !input.files || input.files.length === 0) {
+    showToast('请先选择 .jar 文件', 'error');
+    return;
+  }
+  var file = input.files[0];
+  if (!file.name.toLowerCase().endsWith('.jar')) {
+    showToast('仅支持 .jar 文件', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '... 上传中';
+
+  try {
+    var formData = new FormData();
+    formData.append('file', file);
+
+    var data = await apiCall('/api/server/plugins/upload', 'POST', formData);
+    showToast(data.message || '插件上传成功', 'success');
+    if (statusEl) statusEl.textContent = '';
+    input.value = '';
+    loadPluginList();
+  } catch (err) {
+    showToast('上传失败: ' + (err.message || '网络错误'), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⬆ 上传';
+  }
+}
+
+async function deletePlugin(filename) {
+  if (!confirm('确定要删除插件 "' + filename + '" 吗？\n\n此操作不可撤销，需要重启服务器才能完全移除。')) return;
+  try {
+    var data = await apiCall('/api/server/plugins/delete', 'POST', { filename: filename });
+    showToast(data.message || '插件已删除', 'success');
+    loadPluginList();
+  } catch (err) {
+    showToast('删除失败: ' + (err.message || '网络错误'), 'error');
+  }
+}
+
+async function togglePlugin(filename) {
+  var label = filename.endsWith('.jar.disabled') ? '启用' : '禁用';
+  if (!confirm('确定要' + label + '此插件吗？\n\n需要重启服务器才能生效。')) return;
+  try {
+    var data = await apiCall('/api/server/plugins/toggle', 'POST', { filename: filename });
+    showToast(data.message || '插件状态已切换', 'success');
+    loadPluginList();
+  } catch (err) {
+    showToast('操作失败: ' + (err.message || '网络错误'), 'error');
+  }
+}
+
+function refreshPluginList() {
+  loadPluginList();
 }
 
 /* =================================================================
