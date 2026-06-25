@@ -98,6 +98,9 @@ class MockMCAdapter:
     def whitelist_remove(self, name):
         return {"removed": name}
 
+    def send_command(self, cmd: str) -> str:
+        return "Command executed"
+
     def get_logs(self, limit=50):
         return [{"time": "14:35:22", "level": "info", "message": "Test log"}]
 
@@ -225,7 +228,7 @@ with admin_app.test_client() as c:
     # Step 14: Logs export
     resp = c.get("/api/logs/export")
     check("GET /api/logs/export", resp.status_code == 200)
-    check("Logs export is text/plain", "text/plain" in resp.content_type)
+    check("Logs export is application/zip", "application/zip" in resp.content_type)
 
     # Step 15: Tunnel update with CSRF
     resp = c.post(
