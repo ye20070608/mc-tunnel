@@ -56,13 +56,16 @@ server/version_history.json
 server/libraries/
 server/versions/
 server/logs/
+server/config/
 
-# frp 运行时（frp/ 子目录）
+# frp 运行时（frp/ 子目录 + 根目录遗留）
 frp/frpc*
 frp/frps*
 frp/frpc.ini
 frp/*.crt
 frp/*.key
+/frp-*.crt
+/frp-*.key
 
 # 运行时生成
 config/config.yaml              # 用户本地配置
