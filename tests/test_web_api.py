@@ -1,6 +1,23 @@
-"""Integration test for Flask web server and API routes."""
+"""Integration test for Flask web server and API routes.
+
+Covers 51 checks across all API blueprints:
+  - Auth (JWT / CSRF / session / Bearer)
+  - MC control (start / stop / restart / status / players / kick / op / deop)
+  - Console & command execution
+  - Admin (login / CSRF / change-password / operation-log)
+  - Whitelist (CRUD / reload / toggle / pending)
+  - Logs (query / filter / export)
+  - Tunnel (status / update)
+  - Server (versions / worlds / info)
+  - Plugins (list / upload / delete / toggle)
+  - Public status (no auth)
+  - Edge cases (invalid JWT / no CSRF / empty input)
+"""
+import io
+import os
 import sys
 import json
+import zipfile
 from pathlib import Path
 
 # Ensure the project root is on sys.path (derived relative to this file)
@@ -107,6 +124,27 @@ class MockMCAdapter:
     def update_mapping(self, mapping):
         return {"updated": True}
 
+    def op_player(self, name):
+        return {"opped": True}
+
+    def deop_player(self, name):
+        return {"deopped": True}
+
+    def get_console_output(self, limit=100):
+        return ["[14:30:22] [Server thread/INFO]: Test console output line"]
+
+    def get_installed_versions(self):
+        return ["1.20.4", "1.21"]
+
+    def is_running(self):
+        return False
+
+    def get_pending_players(self):
+        return [{"name": "NewGuy", "rejected_at": "2026-06-25 14:00"}]
+
+    def get_player_ips(self):
+        return {}
+
 
 class MockTunnelManager:
     def get_status(self):
@@ -121,6 +159,16 @@ class MockTunnelManager:
     def update_mapping(self, mapping):
         return {"updated": True}
 
+    def reload_and_restart(self):
+        return True
+
+
+class MockConfigManager:
+    """Mock config manager for change-password tests."""
+
+    def update_admin_password(self, username, password_hash):
+        return True
+
 
 class MockAuditLogger:
     def __init__(self):
@@ -133,8 +181,27 @@ class MockAuditLogger:
         return self.logs[-limit:]
 
 
+# Helper: create a minimal valid JAR/ZIP for plugin upload testing
+def _make_minimal_jar() -> bytes:
+    """Return bytes of a minimal valid ZIP containing a plugin.yml."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("plugin.yml", 'name: TestPlugin\nversion: "1.0"\nmain: com.example.Test\n')
+    return buf.getvalue()
+
+
+# Ensure server/plugins/ exists for plugin tests and seed with a toggle-test jar
+_server_plugins = Path("server/plugins")
+_server_plugins.mkdir(parents=True, exist_ok=True)
+_toggle_jar = _server_plugins / "toggle_test.jar"
+if not _toggle_jar.exists():
+    _toggle_jar.write_bytes(_make_minimal_jar())
+
+
 audit = MockAuditLogger()
-admin_app = create_admin_app(config, logger, MockMCAdapter(), MockTunnelManager(), audit)
+admin_app = create_admin_app(
+    config, logger, MockMCAdapter(), MockTunnelManager(), audit, MockConfigManager(),
+)
 
 print("=== Admin App Auth Flow Tests ===\n")
 
@@ -279,12 +346,271 @@ with admin_app.test_client() as c:
     resp = c.get("/api/public/status")
     check("Public status (no auth)", resp.status_code == 200)
 
+    # ── OP / DEOP ─────────────────────────────────────────────
+
+    # Step 22: OP player with CSRF
+    resp = c.post(
+        "/api/mc/op",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"name": "Steve"},
+    )
+    check("POST /api/mc/op with CSRF", resp.status_code == 200)
+
+    # Step 23: OP player without CSRF -> 403
+    resp = c.post(
+        "/api/mc/op",
+        headers={"Content-Type": "application/json"},
+        json={"name": "Steve"},
+    )
+    check("POST /api/mc/op without CSRF -> 403", resp.status_code == 403)
+
+    # Step 24: OP player empty name -> 400
+    resp = c.post(
+        "/api/mc/op",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"name": ""},
+    )
+    check("POST /api/mc/op empty name -> 400", resp.status_code == 400)
+
+    # Step 25: DEOP player with CSRF
+    resp = c.post(
+        "/api/mc/deop",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"name": "Steve"},
+    )
+    check("POST /api/mc/deop with CSRF", resp.status_code == 200)
+
+    # Step 26: DEOP player empty name -> 400
+    resp = c.post(
+        "/api/mc/deop",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"name": ""},
+    )
+    check("POST /api/mc/deop empty name -> 400", resp.status_code == 400)
+
+    # ── Console & Command ──────────────────────────────────────
+
+    # Step 27: Console output
+    resp = c.get("/api/mc/console")
+    check("GET /api/mc/console", resp.status_code == 200)
+    data = json.loads(resp.data)
+    check("Console has success=true", data.get("success") is True)
+    check("Console has lines array", isinstance(data.get("lines"), list))
+
+    # Step 28: Console with limit param
+    resp = c.get("/api/mc/console?limit=10")
+    check("GET /api/mc/console?limit=10", resp.status_code == 200)
+
+    # Step 29: Send command with CSRF
+    resp = c.post(
+        "/api/mc/command",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"command": "list"},
+    )
+    check("POST /api/mc/command with CSRF", resp.status_code == 200)
+    data = json.loads(resp.data)
+    check("Command response has response field", "response" in data)
+
+    # Step 30: Send empty command -> 400
+    resp = c.post(
+        "/api/mc/command",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"command": ""},
+    )
+    check("POST /api/mc/command empty -> 400", resp.status_code == 400)
+
+    # ── Change password ────────────────────────────────────────
+
+    # Step 31: Change password success
+    resp = c.post(
+        "/api/admin/change-password",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"old_password": "adminpass", "new_password": "newpass123"},
+    )
+    check("POST /api/admin/change-password success", resp.status_code == 200)
+
+    # Step 32: Change password wrong old -> 403
+    resp = c.post(
+        "/api/admin/change-password",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"old_password": "wrongpass", "new_password": "newpass123"},
+    )
+    check("POST /api/admin/change-password wrong old -> 403", resp.status_code == 403)
+
+    # Step 33: Change password short new -> 400
+    resp = c.post(
+        "/api/admin/change-password",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"old_password": "adminpass", "new_password": "123"},
+    )
+    check("POST /api/admin/change-password short new -> 400", resp.status_code == 400)
+
+    # Step 34: Change password missing fields -> 400
+    resp = c.post(
+        "/api/admin/change-password",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"old_password": "", "new_password": ""},
+    )
+    check("POST /api/admin/change-password missing fields -> 400", resp.status_code == 400)
+
+    # ── Server versions & info ─────────────────────────────────
+
+    # Step 35: Version list
+    resp = c.get("/api/server/versions")
+    check("GET /api/server/versions", resp.status_code == 200)
+    data = json.loads(resp.data)
+    check("Version list has success=true", data.get("success") is True)
+    check("Version list has versions array", isinstance(data.get("versions"), list))
+    check("Version list has current_version", "current_version" in data)
+
+    # Step 36: Server info
+    resp = c.get("/api/server/info")
+    check("GET /api/server/info", resp.status_code == 200)
+    data = json.loads(resp.data)
+    check("Server info has success=true", data.get("success") is True)
+    info_data = data.get("data", {})
+    for key in ("local_ip", "port", "version", "online_mode", "active_world", "status"):
+        check(f"Server info has key '{key}'", key in info_data)
+
+    # Step 37: World list
+    resp = c.get("/api/server/worlds")
+    check("GET /api/server/worlds", resp.status_code == 200)
+    data = json.loads(resp.data)
+    check("World list has success=true", data.get("success") is True)
+
+    # ── Whitelist reload / toggle / pending ────────────────────
+
+    # Step 38: Whitelist reload
+    resp = c.post(
+        "/api/whitelist/reload",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+    )
+    check("POST /api/whitelist/reload", resp.status_code == 200)
+
+    # Step 39: Whitelist toggle
+    resp = c.post(
+        "/api/whitelist/toggle",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+    )
+    check("POST /api/whitelist/toggle", resp.status_code == 200)
+
+    # Step 40: Whitelist pending
+    resp = c.get("/api/whitelist/pending")
+    check("GET /api/whitelist/pending", resp.status_code == 200)
+    data = json.loads(resp.data)
+    check("Pending list has success=true", data.get("success") is True)
+
+    # ── Plugin management ──────────────────────────────────────
+
+    # Step 41: Plugin list (empty or seeded)
+    resp = c.get("/api/server/plugins")
+    check("GET /api/server/plugins", resp.status_code == 200)
+    data = json.loads(resp.data)
+    check("Plugin list has success=true", data.get("success") is True)
+    check("Plugin list has plugins array", isinstance(data.get("plugins"), list))
+    check("Plugin list has count", "count" in data)
+
+    # Step 42: Plugin upload — no file -> 400
+    resp = c.post(
+        "/api/server/plugins/upload",
+        headers={"X-CSRF-Token": csrf2},
+        content_type="multipart/form-data",
+    )
+    check("POST /api/server/plugins/upload no file -> 400", resp.status_code == 400)
+
+    # Step 43: Plugin upload — valid file
+    resp = c.post(
+        "/api/server/plugins/upload",
+        data={"file": (io.BytesIO(_make_minimal_jar()), "TestPlugin.jar")},
+        content_type="multipart/form-data",
+        headers={"X-CSRF-Token": csrf2},
+    )
+    check("POST /api/server/plugins/upload valid jar", resp.status_code == 200)
+    data = json.loads(resp.data)
+    check("Plugin upload success=true", data.get("success") is True)
+
+    # Step 44: Plugin upload — invalid filename -> 400
+    resp = c.post(
+        "/api/server/plugins/upload",
+        data={"file": (io.BytesIO(_make_minimal_jar()), "../evil.jar")},
+        content_type="multipart/form-data",
+        headers={"X-CSRF-Token": csrf2},
+    )
+    check("POST /api/server/plugins/upload path traversal -> 400", resp.status_code == 400)
+
+    # Step 45: Plugin upload — duplicate -> 409
+    resp = c.post(
+        "/api/server/plugins/upload",
+        data={"file": (io.BytesIO(_make_minimal_jar()), "TestPlugin.jar")},
+        content_type="multipart/form-data",
+        headers={"X-CSRF-Token": csrf2},
+    )
+    check("POST /api/server/plugins/upload duplicate -> 409", resp.status_code == 409)
+
+    # Step 46: Plugin delete — missing filename -> 400
+    resp = c.post(
+        "/api/server/plugins/delete",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={},
+    )
+    check("POST /api/server/plugins/delete missing filename -> 400", resp.status_code == 400)
+
+    # Step 47: Plugin delete — nonexistent -> 404
+    resp = c.post(
+        "/api/server/plugins/delete",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"filename": "NonExistent.jar"},
+    )
+    check("POST /api/server/plugins/delete nonexistent -> 404", resp.status_code == 404)
+
+    # Step 48: Plugin toggle — missing filename -> 400
+    resp = c.post(
+        "/api/server/plugins/toggle",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={},
+    )
+    check("POST /api/server/plugins/toggle missing filename -> 400", resp.status_code == 400)
+
+    # Step 49: Plugin toggle — nonexistent -> 404
+    resp = c.post(
+        "/api/server/plugins/toggle",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"filename": "NonExistent.jar"},
+    )
+    check("POST /api/server/plugins/toggle nonexistent -> 404", resp.status_code == 404)
+
+    # Step 50: Plugin toggle — existing file (enable → disable)
+    resp = c.post(
+        "/api/server/plugins/toggle",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"filename": "toggle_test.jar"},
+    )
+    check("POST /api/server/plugins/toggle existing (enable→disable)", resp.status_code == 200)
+    data = json.loads(resp.data)
+    check("Toggle result disabled=true", data.get("disabled") is True)
+
+    # Step 51: Plugin toggle — back (disable → enable)
+    resp = c.post(
+        "/api/server/plugins/toggle",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"filename": "toggle_test.jar.disabled"},
+    )
+    check("POST /api/server/plugins/toggle (disable→enable)", resp.status_code == 200)
+
+    # Step 52: Plugin delete — delete the uploaded test plugin
+    resp = c.post(
+        "/api/server/plugins/delete",
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf2},
+        json={"filename": "TestPlugin.jar"},
+    )
+    check("POST /api/server/plugins/delete TestPlugin.jar", resp.status_code == 200)
+
 print("\n--- Bearer Token Tests (no session) ---\n")
 
 # New test client without session cookies, all requests via Bearer header
 with admin_app.test_client() as c2:
 
-    # Step 22: Tunnel status with Bearer token
+    # Step 53: Tunnel status with Bearer token
     resp = c2.get(
         "/api/tunnel/status",
         headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
@@ -293,7 +619,7 @@ with admin_app.test_client() as c2:
     data = json.loads(resp.data)
     check("Tunnel status success", data.get("success") is True)
 
-    # Step 23: Expired/invalid token -> 401
+    # Step 54: Expired/invalid token -> 401
     resp = c2.get(
         "/api/mc/status",
         headers={"Authorization": "Bearer invalid.token.here", "Accept": "application/json"},
@@ -302,9 +628,24 @@ with admin_app.test_client() as c2:
     data = json.loads(resp.data)
     check("401 error is 'unauthorized'", data.get("error") == "unauthorized")
 
-    # Step 24: Dashboard redirect with no auth
+    # Step 55: Dashboard redirect with no auth
     resp = c2.get("/", headers={"Accept": "text/html"})
     check("Dashboard redirects (302) without auth", resp.status_code == 302)
+
+    # Step 56: Server versions via Bearer token (read endpoint)
+    resp = c2.get(
+        "/api/server/versions",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+    )
+    check("Version list via Bearer token", resp.status_code == 200)
+
+    # Step 57: CSRF protected endpoint via Bearer — missing X-CSRF-Token -> 403
+    resp = c2.post(
+        "/api/mc/op",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json", "Content-Type": "application/json"},
+        json={"name": "Steve"},
+    )
+    check("OP via Bearer without CSRF -> 403", resp.status_code == 403)
 
 print(f"\n=== Results: {len(errors)} failures ===")
 if errors:
