@@ -30,8 +30,8 @@ class WhitelistManager:
 
     def __init__(self, adapter: MCServerAdapter) -> None:
         self._adapter = adapter
-        self._meta_path = Path("whitelist_meta.json")
-        self._whitelist_path = Path("whitelist.json")
+        self._meta_path = Path("server/whitelist_meta.json")
+        self._whitelist_path = Path("server/whitelist.json")
         self._meta_lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -187,7 +187,7 @@ class WhitelistManager:
     def _read_server_properties() -> dict[str, str]:
         """Read ``server.properties`` into a flat dict."""
         props: dict[str, str] = {}
-        props_path = Path("server.properties")
+        props_path = Path("server/server.properties")
         if not props_path.is_file():
             return props
         for line in props_path.read_text(encoding="utf-8").splitlines():
@@ -202,7 +202,7 @@ class WhitelistManager:
     def _write_server_property(key: str, value: str) -> None:
         """Update or add a single key=value in ``server.properties``."""
         import os
-        props_path = Path("server.properties")
+        props_path = Path("server/server.properties")
         lines: list[str] = []
         if props_path.is_file():
             lines = props_path.read_text(encoding="utf-8").splitlines()

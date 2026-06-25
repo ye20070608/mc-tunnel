@@ -6,6 +6,7 @@ import re
 import subprocess
 import threading
 import time
+from pathlib import Path
 from typing import Callable
 
 # Patterns for internal/non-game console lines that should be hidden
@@ -46,6 +47,7 @@ class ProcessManager:
         auto_restart: bool = False,
         restart_max: int = 3,
         stdout_callback: Callable[[str], None] | None = None,
+        cwd: str | Path | None = None,
     ) -> None:
         """Initialize the process manager.
 
@@ -56,6 +58,7 @@ class ProcessManager:
             auto_restart: If True, restart the process on unexpected exit.
             restart_max: Maximum number of auto-restart attempts.
             stdout_callback: Optional callback invoked for each line of stdout.
+            cwd: Working directory for the subprocess (None = inherit from parent).
         """
         self._name = name
         self._cmd = cmd
@@ -63,6 +66,7 @@ class ProcessManager:
         self._auto_restart = auto_restart
         self._restart_max = restart_max
         self._stdout_callback = stdout_callback
+        self._cwd = str(cwd) if cwd is not None else None
 
         self._restart_count = 0
         self._process: subprocess.Popen | None = None
@@ -95,6 +99,7 @@ class ProcessManager:
                 self._stop_requested = False
                 self._process = subprocess.Popen(
                     self._cmd,
+                    cwd=self._cwd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     stdin=subprocess.DEVNULL,

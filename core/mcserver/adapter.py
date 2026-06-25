@@ -60,6 +60,7 @@ class MCServerAdapter:
             auto_restart=config.mc.auto_restart,
             restart_max=config.mc.restart_max_retries,
             stdout_callback=self._on_server_output,
+            cwd=Path.cwd() / "server",
         )
 
         # RCON settings: prefer server.properties, fall back to defaults
@@ -93,7 +94,7 @@ class MCServerAdapter:
             return False
 
         # Ensure RCON is enabled in server.properties (always, not just on first run)
-        props_path = Path("server.properties")
+        props_path = Path("server/server.properties")
         if not props_path.exists():
             self._log.info("Generating server.properties...")
             generator = ServerPropertiesGenerator(self._config)
@@ -404,7 +405,7 @@ class MCServerAdapter:
             file does not exist or cannot be parsed.
         """
         import json
-        ops_path = Path("ops.json")
+        ops_path = Path("server/ops.json")
         if not ops_path.exists():
             return set()
         try:
@@ -557,7 +558,7 @@ class MCServerAdapter:
         """
         from pathlib import Path
 
-        log_path = Path("logs/latest.log")
+        log_path = Path("server/logs/latest.log")
         if not log_path.is_file():
             return []
 
@@ -629,7 +630,7 @@ class MCServerAdapter:
         from pathlib import Path
 
         jars: list[dict] = []
-        for jar_path in sorted(Path.cwd().glob("paper-*.jar"), reverse=True):
+        for jar_path in sorted(Path.cwd().joinpath("server").glob("paper-*.jar"), reverse=True):
             name = jar_path.name
             # Parse: paper-{version}-{build}.jar
             stem = name.replace(".jar", "")
@@ -679,7 +680,7 @@ class MCServerAdapter:
             return False
 
         # Check that the version JAR exists
-        matches = list(Path.cwd().glob(f"paper-{version}-*.jar"))
+        matches = list(Path.cwd().joinpath("server").glob(f"paper-{version}-*.jar"))
         if not matches:
             return False
 
@@ -802,7 +803,7 @@ class MCServerAdapter:
         Returns:
             True if ``eula.txt`` exists and contains ``eula=true``.
         """
-        eula_path = Path("eula.txt")
+        eula_path = Path("server/eula.txt")
         if not eula_path.exists():
             self._log.error(
                 "eula.txt not found. Please read and accept the Minecraft EULA, "
@@ -833,7 +834,7 @@ class MCServerAdapter:
         Returns:
             Path to the first matching JAR, or ``"paper.jar"`` as fallback.
         """
-        server_dir = Path.cwd()
+        server_dir = Path.cwd() / "server"
         for pattern in ("paper-*.jar", "minecraft_server*.jar", "server.jar"):
             matches = list(server_dir.glob(pattern))
             if matches:
@@ -847,7 +848,7 @@ class MCServerAdapter:
 
     def _load_rcon_config(self) -> None:
         """Read RCON settings from ``server.properties``, if available."""
-        props_path = Path("server.properties")
+        props_path = Path("server/server.properties")
         if not props_path.exists():
             self._log.debug("server.properties not found, using default RCON settings")
             return

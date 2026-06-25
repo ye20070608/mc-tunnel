@@ -93,7 +93,7 @@ class ServerPropertiesGenerator:
 
     def write(
         self,
-        path: Path | str = "server.properties",
+        path: Path | str = "server/server.properties",
         rcon_password: str = "",
         rcon_port: int = 25575,
         server_port: int = 25565,

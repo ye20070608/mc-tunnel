@@ -33,7 +33,7 @@ def recent():
     limit: int = max(1, min(request.args.get("limit", 500, type=int), 2000))
 
     try:
-        log_path = Path("logs/latest.log")
+        log_path = Path("server/logs/latest.log")
         if log_path.is_file():
             raw = log_path.read_text(encoding="utf-8", errors="replace")
             lines = raw.splitlines()
