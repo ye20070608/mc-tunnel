@@ -26,8 +26,7 @@ build/
 *.swp
 *.swo
 
-# MC 服务端运行时（server/ 子目录，不纳入仓库）
-# New locations (after migration)
+# MC 服务端运行时（server/ 子目录）
 server/paper*.jar
 server/server.jar
 server/cache/
@@ -54,46 +53,13 @@ server/version_history.json
 server/libraries/
 server/versions/
 server/logs/
-# Legacy root-level locations (before migration — remove once migrated)
-paper*.jar
-server*.jar
-cache/
-eula.txt
-worlds/
-world/
-world_nether/
-world_the_end/
-plugins/
-mods/
-server.properties
-banned-ips.json
-banned-players.json
-ops.json
-whitelist.json
-whitelist_meta.json
-usercache.json
-bukkit.yml
-spigot.yml
-commands.yml
-help.yml
-permissions.yml
-version_history.json
-libraries/
-versions/
 
-# frp 运行时（frp/ 子目录，不纳入仓库）
-# New locations (after migration)
+# frp 运行时（frp/ 子目录）
 frp/frpc*
 frp/frps*
 frp/frpc.ini
 frp/*.crt
 frp/*.key
-# Legacy root-level locations (before migration — remove once migrated)
-frpc*
-frps*
-frpc.ini
-*.crt
-*.key
 
 # 运行时生成
 config/config.yaml              # 用户本地配置
