@@ -353,6 +353,46 @@
      ============================================================ -->
 
 <!-- Kick modals (one per player) -->
+
+<!-- Plugin Management Modal -->
+<div class="modal-overlay" id="modal-plugins">
+  <div class="modal-box" style="width:640px;max-width:95vw;">
+    <h3>📦 插件管理</h3>
+    <p style="font-size:11px;color:var(--muted);margin-bottom:4px;">
+      插件目录: <code style="background:var(--surface2);padding:2px 6px;border-radius:2px;">server/plugins/</code>
+    </p>
+    <p style="font-size:11px;color:var(--warning);margin-bottom:16px;">
+      ⚠ PaperMC 仅支持 Bukkit/Paper 插件（.jar），不支持 Forge/Fabric 模组。上传或修改插件后需要<strong>重启服务器</strong>才能生效。
+    </p>
+
+    <!-- Upload row -->
+    <div class="field">
+      <label style="font-family:var(--font-pixel);font-size:10px;color:var(--muted);">上传新插件 (.jar)</label>
+      <div style="display:flex;gap:8px;">
+        <input type="file" class="input" id="plugin-upload-input"
+               accept=".jar" style="flex:1;padding:8px 12px;font-size:12px;">
+        <button class="btn btn-primary btn-sm" onclick="uploadPlugin()"
+                id="btn-upload-plugin" style="flex-shrink:0;">⬆ 上传</button>
+      </div>
+      <div id="plugin-upload-status" style="font-size:11px;color:var(--muted);margin-top:4px;"></div>
+    </div>
+
+    <!-- Plugin list -->
+    <div class="card-header" style="margin-bottom:8px;margin-top:12px;">
+      已安装插件 (<span id="plugin-count">0</span>)
+    </div>
+    <div id="plugin-list" style="max-height:320px;overflow-y:auto;border:1px solid var(--border);">
+      <div class="empty-state"><p>加载中...</p></div>
+    </div>
+
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn btn-secondary btn-sm" onclick="refreshPluginList()">🔄 刷新</button>
+      <a class="modal-close" onclick="closeModal('modal-plugins')">关闭</a>
+    </div>
+  </div>
+</div>
+
+<!-- Kick modals (one per player) -->
 {% if data.players and data.players|length > 0 %}
   {% for player in data.players %}
   <div class="modal-overlay" id="modal-kick-{{loop.index0}}">
@@ -416,6 +456,9 @@
 <div class="toast" id="toast-reload">🔄 白名单已重新加载</div>
 <div class="toast" id="toast-export">📥 日志已导出到文件</div>
 <div class="toast" id="toast-clear" style="border-color:var(--danger);">🗑 日志已清空</div>
+<div class="toast" id="toast-plugin-upload">⬆ 插件上传成功</div>
+<div class="toast" id="toast-plugin-delete" style="border-color:var(--danger);">🗑 插件已删除</div>
+<div class="toast" id="toast-plugin-toggle">🔁 插件状态已切换</div>
 
 <script src="{{url_for('static', filename='app.js')}}"></script>
 

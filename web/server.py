@@ -128,6 +128,9 @@ def create_app(config: dict, logger) -> Flask:
     if config.get("web", {}).get("ssl_enabled", True):
         app.config["SESSION_COOKIE_SECURE"] = True
 
+    # Upload size limit (50 MB) — protects plugin upload endpoint
+    app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
+
     # Store logger
     app.logger = logger
 
@@ -157,6 +160,12 @@ def create_app(config: dict, logger) -> Flask:
         if request.path.startswith("/api/"):
             return jsonify({"error": "not_found", "message": "Resource not found"}), 404
         return render_template("intro.html"), 404
+
+    @app.errorhandler(413)
+    def request_too_large(_e) -> tuple:
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "too_large", "message": "文件过大，上传限制为 50 MB"}), 413
+        return "<h1>413 — Request Entity Too Large</h1>", 413
 
     @app.errorhandler(500)
     def server_error(_e) -> tuple:

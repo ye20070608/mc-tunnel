@@ -448,6 +448,17 @@ select.input {
 }
 .modal-close:hover { background: #3a3f3a; }
 
+/* ---- Plugin List (in modal) ---- */
+.plugin-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04);
+  gap: 12px;
+}
+.plugin-item:last-child { border-bottom: none; }
+.plugin-info { flex: 1; min-width: 0; }
+.plugin-info strong { font-size: 12px; }
+.plugin-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
 /* ---- Toast Notifications (:target + JS container) ---- */
 
 .toast {

@@ -13,6 +13,7 @@ from api.whitelist import whitelist_bp
 from api.logs_api import logs_bp
 from api.public import public_bp
 from api.server import server_bp
+from api.plugins import plugins_bp
 
 
 def register_routes(
@@ -48,3 +49,4 @@ def register_routes(
     app.register_blueprint(logs_bp)
     app.register_blueprint(public_bp)
     app.register_blueprint(server_bp)
+    app.register_blueprint(plugins_bp)
