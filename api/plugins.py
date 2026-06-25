@@ -51,7 +51,7 @@ def list_plugins():
         })
     except Exception as exc:
         current_app.logger.error(f"Failed to list plugins: {exc}")
-        return jsonify({"error": "server_error", "message": str(exc)}), 500
+        return jsonify({"error": "server_error", "message": "服务器内部错误"}), 500
 
 
 @plugins_bp.route("/upload", methods=["POST"])
@@ -76,14 +76,18 @@ def upload_plugin():
         if uploaded is None:
             return jsonify({"error": "missing_file", "message": "未提供文件"}), 400
 
-        # Sanitise the filename
-        raw_name = uploaded.filename or ""
-        filename = secure_filename(raw_name)
-        if not filename:
-            return jsonify({"error": "invalid_name", "message": "文件名无效"}), 400
+        # Validate raw filename BEFORE sanitisation (defense-in-depth)
+        raw_name = (uploaded.filename or "").strip()
+        if not PluginManager.validate_plugin_name(raw_name):
+            return jsonify({"error": "invalid_name", "message": "文件名包含非法字符"}), 400
 
-        if not filename.lower().endswith(".jar"):
+        if not raw_name.lower().endswith(".jar"):
             return jsonify({"error": "invalid_type", "message": "仅支持 .jar 文件"}), 400
+
+        # Sanitise for safe filesystem use (secondary pass after our own validation)
+        filename = secure_filename(raw_name)
+        if not filename or not filename.lower().endswith(".jar"):
+            return jsonify({"error": "invalid_name", "message": "文件名无效"}), 400
 
         data = uploaded.read()
 
@@ -103,8 +107,8 @@ def upload_plugin():
             "filename": filename,
         })
     except Exception as exc:
-        current_app.logger.error(f"Plugin upload error: {exc}")
-        return jsonify({"error": "upload_error", "message": str(exc)}), 500
+        current_app.logger.error(f"Plugin upload error: {exc}", exc_info=True)
+        return jsonify({"error": "upload_error", "message": "上传失败，请重试"}), 500
 
 
 @plugins_bp.route("/delete", methods=["POST"])
@@ -141,8 +145,8 @@ def delete_plugin():
             "filename": filename,
         })
     except Exception as exc:
-        current_app.logger.error(f"Plugin delete error: {exc}")
-        return jsonify({"error": "delete_error", "message": str(exc)}), 500
+        current_app.logger.error(f"Plugin delete error: {exc}", exc_info=True)
+        return jsonify({"error": "delete_error", "message": "删除失败，请重试"}), 500
 
 
 @plugins_bp.route("/toggle", methods=["POST"])
@@ -185,5 +189,5 @@ def toggle_plugin():
             "disabled": now_disabled,
         })
     except Exception as exc:
-        current_app.logger.error(f"Plugin toggle error: {exc}")
-        return jsonify({"error": "toggle_error", "message": str(exc)}), 500
+        current_app.logger.error(f"Plugin toggle error: {exc}", exc_info=True)
+        return jsonify({"error": "toggle_error", "message": "操作失败，请重试"}), 500

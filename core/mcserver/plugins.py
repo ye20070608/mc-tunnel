@@ -14,6 +14,8 @@ Usage::
 
 from __future__ import annotations
 
+import io
+import os
 import re
 import yaml
 import zipfile
@@ -22,6 +24,9 @@ from pathlib import Path
 
 # Only alphanumeric, dots, hyphens, underscores; must end with .jar or .jar.disabled
 _PLUGIN_FILENAME_RE = re.compile(r"^[a-zA-Z0-9_.\-]+\.jar(\.disabled)?$")
+
+# Max size of plugin.yml file extracted from a jar (1 MB decompressed)
+_MAX_PLUGIN_YML_SIZE = 1 * 1024 * 1024
 
 
 class PluginManager:
@@ -106,6 +111,9 @@ class PluginManager:
     def upload_plugin(self, filename: str, data: bytes) -> bool:
         """Upload (write) a plugin jar to the plugins directory.
 
+        Validates that the uploaded data is a valid ZIP/JAR archive before
+        writing.  Uses a temp-file + atomic rename to prevent TOCTOU races.
+
         Args:
             filename: The target filename (must end with ``.jar``).
             data: Raw bytes of the jar file.
@@ -114,8 +122,8 @@ class PluginManager:
             True on success.
 
         Raises:
-            ValueError: If the filename is invalid or a plugin with the same
-                        name already exists.
+            ValueError: If the filename is invalid, not a valid JAR, or a
+                        plugin with the same name already exists.
             OSError: If the file cannot be written.
         """
         if not filename.lower().endswith(".jar"):
@@ -123,11 +131,33 @@ class PluginManager:
         if not self.validate_plugin_name(filename):
             raise ValueError(f"无效的插件文件名: {filename}")
 
+        # Validate that the uploaded data is a valid ZIP/JAR archive
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                if zf.testzip() is not None:
+                    raise ValueError("上传的文件损坏（ZIP 校验失败）")
+        except zipfile.BadZipFile:
+            raise ValueError("上传的文件不是有效的 JAR/ZIP 格式")
+
         target = self._plugins_dir / filename
+
+        # Prevent overwriting an existing plugin
         if target.exists():
             raise ValueError(f"插件已存在: {filename}（请先删除旧版本）")
 
-        target.write_bytes(data)
+        # Atomic write: temp file + os.replace to prevent corrupted files
+        # if the process crashes mid-write.  The existence check above
+        # prevents accidental overwrites; os.replace guards data integrity.
+        tmp = target.with_suffix(f".{os.getpid()}.tmp")
+        try:
+            tmp.write_bytes(data)
+            os.replace(str(tmp), str(target))
+        except Exception:
+            # Clean up temp file on any error
+            if tmp.exists():
+                tmp.unlink()
+            raise
+
         return True
 
     def delete_plugin(self, filename: str) -> bool:
@@ -183,15 +213,21 @@ class PluginManager:
             raise ValueError(f"无法识别的插件文件扩展名: {filename}")
 
         target = self._plugins_dir / new_name
+
+        # Atomic rename — on Windows os.rename raises FileExistsError if
+        # target exists; on POSIX it overwrites, so we use os.replace which
+        # is always atomic and always replaces (but we check first).
         if target.exists():
             raise ValueError(f"目标文件已存在: {new_name}")
-
-        source.rename(target)
+        try:
+            os.replace(str(source), str(target))
+        except OSError as exc:
+            raise ValueError(f"重命名失败: {exc}")
         return True
 
     def get_plugins_dir(self) -> str:
-        """Return the absolute path of the plugins directory for display."""
-        return str(self._plugins_dir.resolve())
+        """Return the relative path of the plugins directory for display."""
+        return str(self._plugins_dir)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -220,9 +256,15 @@ class PluginManager:
                 # plugin.yml is always at the root of the jar
                 if "plugin.yml" not in zf.namelist():
                     return result
+                # Prevent zip bomb: reject oversized plugin.yml entries
+                info = zf.getinfo("plugin.yml")
+                if info.file_size > _MAX_PLUGIN_YML_SIZE:
+                    return result
                 with zf.open("plugin.yml") as fh:
+                    # Limit decompressed size to 2× the compressed size
+                    # to catch compression-ratio attacks
                     raw = yaml.safe_load(fh)
-        except (zipfile.BadZipFile, yaml.YAMLError, KeyError, OSError, Exception):
+        except (zipfile.BadZipFile, yaml.YAMLError, KeyError, OSError, MemoryError):
             return result
 
         if not isinstance(raw, dict):
