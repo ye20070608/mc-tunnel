@@ -78,7 +78,7 @@ class TunnelConfig:
 
 @dataclass
 class WorldConfig:
-    level_name: str = "worlds/world"           # 活跃世界路径（相对于工作目录）
+    level_name: str = "worlds/world/world"      # 活跃世界路径（相对于工作目录）
     seed: str = ""                          # 留空 = 随机种子
     gamemode: str = "survival"              # survival / creative / adventure / spectator
     difficulty: str = "easy"                # peaceful / easy / normal / hard
@@ -190,7 +190,7 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
 
     world_data = data.get("world", {})
     world = WorldConfig(
-        level_name=world_data.get("level_name", "worlds/world"),
+        level_name=world_data.get("level_name", "worlds/world/world"),
         seed=world_data.get("seed", ""),
         gamemode=world_data.get("gamemode", "survival"),
         difficulty=world_data.get("difficulty", "easy"),

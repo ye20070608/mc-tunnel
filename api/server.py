@@ -190,9 +190,8 @@ def delete_world():
     if adapter and adapter.is_running():
         wm = WorldManager()
         active = wm.get_active_world()
-        # get_active_world returns "worlds/<name>", strip prefix
-        active_base = active.replace("worlds/", "").replace("worlds\\", "")
-        if active_base == name:
+        # get_active_world returns the group name (e.g. "world", "hello_world")
+        if active == name:
             return jsonify({"error": "active_world", "message": "Cannot delete active world while server is running"}), 409
 
     try:

@@ -1,11 +1,19 @@
 """World directory manager — scan, create, delete, rename MC world folders.
 
 Minecraft stores each world dimension in a dedicated directory.  The
-three dimensions (overworld, nether, end) are grouped as one world entry:
-``worlds/<name>/`` (overworld), ``worlds/<name>_nether/``,
-``worlds/<name>_the_end/``.
+three dimensions (overworld, nether, end) are nested inside a per-world
+container directory::
 
-The active world is determined by ``level-name`` in ``server.properties``.
+    server/worlds/<name>/
+    ├── world/           ← overworld (the ``level-name`` value)
+    ├── world_nether/    ← Nether (auto-created by MC on first visit)
+    └── world_the_end/   ← End (auto-created by MC on first visit)
+
+The active world is determined by ``level-name`` in ``server.properties``
+(e.g. ``worlds/world/world``, ``worlds/hello_world/world``).
+
+Only the overworld directory is explicitly created; the MC server
+creates the nether / end dimensions on demand.
 """
 
 from __future__ import annotations
@@ -24,14 +32,15 @@ _WORLD_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 class WorldManager:
     """Manage Minecraft world directories under a ``worlds/`` base folder.
 
-    Each world is a group of up to three dimension directories:
+    Each world is a container directory holding up to three dimension
+    subdirectories:
 
-    - ``<name>/`` — overworld (required)
-    - ``<name>_nether/`` — Nether (auto-created by MC on first visit)
-    - ``<name>_the_end/`` — End (auto-created by MC on first visit)
+    - ``<name>/world/`` — overworld (required)
+    - ``<name>/world_nether/`` — Nether (auto-created by MC on first visit)
+    - ``<name>/world_the_end/`` — End (auto-created by MC on first visit)
 
-    Only the overworld directory is explicitly created; the MC server
-    creates the nether / end dimensions on demand.
+    ``level-name`` in server.properties points to the overworld, e.g.
+    ``worlds/<name>/world``.
     """
 
     WORLD_MARKERS = ("level.dat", "session.lock")
@@ -60,15 +69,44 @@ class WorldManager:
         return bool(_WORLD_NAME_RE.match(name))
 
     # ------------------------------------------------------------------
+    # Name helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_level_name(name: str) -> str:
+        """Convert a world group name to a ``level-name`` path.
+
+        ``"hello_world"`` → ``"worlds/hello_world/world"``
+        """
+        return f"worlds/{name}/world"
+
+    @staticmethod
+    def _extract_world_name(level_name: str) -> str:
+        """Extract the world group name from a ``level-name`` path.
+
+        ``"worlds/hello/world"`` → ``"hello"``
+        ``"world"``              → ``"world"``
+        ``"worlds\\hello\\world"`` → ``"hello"``
+        """
+        name = level_name.replace("\\", "/")
+        prefix = "worlds/"
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+        suffix = "/world"
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+        return name
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def list_worlds(self) -> list[dict[str, Any]]:
         """Return all world groups with per-dimension metadata.
 
-        Scans ``worlds/`` for base world directories (those whose name
-        does *not* end with ``_nether`` or ``_the_end``).  Each entry
-        reports whether each of the three dimensions exists on disk.
+        Scans ``worlds/`` for container directories (those containing a
+        ``world/`` overworld subdirectory).  Each entry reports whether
+        each of the three dimensions exists on disk.
 
         Returns:
             List of world dicts with keys ``name``, ``size_mb``,
@@ -77,29 +115,23 @@ class WorldManager:
         if not self._worlds_dir.exists():
             return []
 
-        active = self.get_active_world()
-        # Strip worlds/ prefix for comparison
-        active_base = active.replace("worlds/", "").replace("worlds\\", "")
+        active_group = self.get_active_world()
 
         worlds: list[dict[str, Any]] = []
-        seen: set[str] = set()
 
         for entry in sorted(self._worlds_dir.iterdir()):
             if not entry.is_dir():
                 continue
-            # Skip dimension sub-directories
             base_name = entry.name
-            if base_name.endswith("_nether") or base_name.endswith("_the_end"):
+            # A world group must contain a world/ overworld subdirectory
+            overworld = entry / "world"
+            if not overworld.is_dir():
                 continue
-            if base_name in seen:
-                continue
-            seen.add(base_name)
 
             dims = self._get_dimension_paths(base_name)
             sizes = self._dimension_sizes(dims)
 
             total_bytes = sum(sizes.values())
-            # Use the overworld's modification time (or the oldest dim)
             mtime = self._dim_modified(dims)
 
             worlds.append({
@@ -109,7 +141,7 @@ class WorldManager:
                 "modified": datetime.fromtimestamp(mtime).strftime(
                     "%Y-%m-%d %H:%M"
                 ),
-                "active": base_name == active_base,
+                "active": base_name == active_group,
                 "dimensions": {
                     "overworld": dims["overworld"].exists(),
                     "nether": dims["nether"].exists(),
@@ -120,31 +152,31 @@ class WorldManager:
         return worlds
 
     def create_world(self, name: str) -> bool:
-        """Create a new world (overworld directory with ``session.lock``).
+        """Create a new world (container + overworld with ``session.lock``).
 
         The nether / end directories are NOT created here; the MC server
         generates them automatically when players first enter those
         dimensions.
 
         Args:
-            name: Base world name (e.g. ``"creative"`` → ``worlds/creative/``).
+            name: Base world name (e.g. ``"creative"`` →
+                  ``worlds/creative/world/``).
 
         Returns:
             True if created, False if it already existed.
         """
         if not self.validate_world_name(name):
             return False
-        world_path = self._worlds_dir / name
-        if world_path.exists():
+        overworld = self._worlds_dir / name / "world"
+        if overworld.exists():
             return False
 
-        self._worlds_dir.mkdir(parents=True, exist_ok=True)
-        world_path.mkdir(parents=True, exist_ok=True)
-        (world_path / "session.lock").write_text("", encoding="utf-8")
+        overworld.mkdir(parents=True, exist_ok=True)
+        (overworld / "session.lock").write_text("", encoding="utf-8")
         return True
 
     def delete_world(self, name: str) -> bool:
-        """Delete a world and all its dimension directories.
+        """Delete a world and its entire container directory.
 
         Refuses to delete the currently active world (caller should
         validate the server is stopped beforehand).
@@ -153,22 +185,18 @@ class WorldManager:
             name: Base world name.
 
         Returns:
-            True if the overworld directory was deleted.
+            True if the container directory was deleted.
         """
         if not self.validate_world_name(name):
             return False
-        dims = self._get_dimension_paths(name)
-        deleted = False
-
-        for dim_path in dims.values():
-            if dim_path.exists():
-                shutil.rmtree(dim_path)
-                deleted = True
-
-        return deleted
+        container = self._worlds_dir / name
+        if not container.exists():
+            return False
+        shutil.rmtree(container)
+        return True
 
     def rename_world(self, old_name: str, new_name: str) -> bool:
-        """Rename a world and its existing dimension directories.
+        """Rename a world container directory.
 
         If the active world is renamed, ``server.properties`` is updated
         to point to the new name.
@@ -178,27 +206,25 @@ class WorldManager:
             new_name: Desired base world name.
 
         Returns:
-            True on success, False if *old_name* overworld doesn't exist
-            or *new_name* overworld already exists.
+            True on success, False if *old_name* container doesn't exist
+            or *new_name* container already exists.
         """
         if not self.validate_world_name(old_name) or not self.validate_world_name(new_name):
             return False
-        old_dims = self._get_dimension_paths(old_name)
-        new_dims = self._get_dimension_paths(new_name)
+        old_container = self._worlds_dir / old_name
+        new_container = self._worlds_dir / new_name
 
-        if not old_dims["overworld"].exists():
+        if not old_container.is_dir():
             return False
-        if new_dims["overworld"].exists():
+        if new_container.exists():
             return False
 
-        for key, old_path in old_dims.items():
-            if old_path.exists():
-                old_path.rename(new_dims[key])
+        old_container.rename(new_container)
 
         # Update server.properties if active world was renamed
-        active_base = self.get_active_world().replace("worlds/", "").replace("worlds\\", "")
-        if active_base == old_name:
-            self._set_active_world(f"worlds/{new_name}")
+        active_group = self.get_active_world()
+        if active_group == old_name:
+            self._set_active_world(self._make_level_name(new_name))
 
         return True
 
@@ -213,10 +239,11 @@ class WorldManager:
         """
         if not self.validate_world_name(name):
             return False
-        world_path = self._worlds_dir / name
-        if not world_path.exists():
+        overworld = self._worlds_dir / name / "world"
+        if not overworld.exists():
             return False
-        self._set_active_world(f"worlds/{name}")
+        level_name = self._make_level_name(name)
+        self._set_active_world(level_name)
 
         # Also sync config.yaml so ServerPropertiesGenerator stays in sync
         try:
@@ -224,7 +251,7 @@ class WorldManager:
             cm_path = Path("config/config.yaml")
             if cm_path.exists():
                 raw = yaml.safe_load(cm_path.read_text(encoding="utf-8")) or {}
-                raw.setdefault("world", {})["level_name"] = f"worlds/{name}"
+                raw.setdefault("world", {})["level_name"] = level_name
                 # Atomic write
                 import tempfile
                 fd, tmp = tempfile.mkstemp(dir=cm_path.parent, prefix="config_", suffix=".tmp")
@@ -240,64 +267,64 @@ class WorldManager:
         return True
 
     def get_active_world(self) -> str:
-        """Return the ``level-name`` from ``server.properties``.
+        """Return the active world group name.
 
-        Returns the bare world name (without ``worlds/`` prefix) when
-        the path is under ``worlds/``, or the raw value otherwise.
+        Parses ``level-name`` from ``server.properties`` and extracts
+        the group name.  E.g. ``"worlds/hello/world"`` → ``"hello"``.
         """
-        return self._get_active_world()
+        raw = self._get_active_world()
+        return self._extract_world_name(raw)
 
     def migrate_existing(self) -> int:
-        """Migrate root-level world dirs into ``worlds/`` on first run.
+        """Migrate root-level world dirs into the nested ``worlds/`` structure.
 
-        If the server root contains ``world/`` and ``worlds/world/``
-        does not yet exist, moves ``world/``, ``world_nether/``, and
-        ``world_the_end/`` into ``worlds/``.
+        Handles two scenarios:
 
-        Also scans for additional world groups in the root (anything
-        with a matching ``_nether`` or ``_the_end`` pair).
+        1. **Root-level worlds** — ``server/world/`` (with ``level.dat``)
+           is moved to ``server/worlds/world/world/`` (and likewise for
+           ``_nether`` / ``_the_end`` companions).
+
+        2. **Old flat worlds/** — If ``server/worlds/<name>/`` already
+           contains ``level.dat`` (i.e. it IS the overworld, not a
+           container), it is moved to ``server/worlds/<name>/world/``
+           (creating the container nesting).
 
         Returns:
             Number of world groups migrated.
         """
         migrated = 0
+        self._worlds_dir.mkdir(parents=True, exist_ok=True)
 
-        # Only consider directories directly under server root
-        root_dirs = {d.name: d for d in self._server_dir.iterdir() if d.is_dir()}
-
-        # Known non-world directories to skip
+        # Known non-world directories to skip when scanning root
         SKIP = {
             "logs", "plugins", "config", "venv", ".git", "__pycache__",
             "scripts", "docs", "tests", "web", "api", "core", "logger",
             "worlds", ".claude", ".omc", ".vscode", ".idea", ".vs",
-            "dist", "build", "cache",
+            "dist", "build", "cache", "frp",
         }
+
+        # ── Phase 1: Root-level → nested worlds/<name>/world/ ──
+        root_dirs = {d.name: d for d in self._server_dir.iterdir() if d.is_dir()}
 
         candidates: set[str] = set()
         for name in root_dirs:
-            # Skip hidden directories (starts with .)
             if name.startswith("."):
                 continue
             if name in SKIP:
                 continue
             if name.endswith("_nether") or name.endswith("_the_end"):
-                # Found a dimension dir → the base is the prefix
                 if name.endswith("_nether"):
                     base = name[:-7]
                 else:
                     base = name[:-9]
                 candidates.add(base)
             else:
-                # Require level.dat (not just session.lock) to confirm it's a real world
                 path = root_dirs[name]
                 if (path / "level.dat").exists():
                     candidates.add(name)
 
-        # Ensure worlds/ dir exists
-        self._worlds_dir.mkdir(parents=True, exist_ok=True)
-
         for base in sorted(candidates):
-            target_overworld = self._worlds_dir / base
+            target_overworld = self._worlds_dir / base / "world"
             if target_overworld.exists():
                 continue  # already migrated
 
@@ -306,21 +333,68 @@ class WorldManager:
             source_end = root_dirs.get(f"{base}_the_end")
 
             if source_overworld and source_overworld.is_dir():
+                # Ensure container exists
+                container = self._worlds_dir / base
+                container.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(source_overworld), str(target_overworld))
                 migrated += 1
 
             if source_nether and source_nether.is_dir():
-                shutil.move(str(source_nether), str(self._worlds_dir / f"{base}_nether"))
+                shutil.move(str(source_nether), str(self._worlds_dir / base / "world_nether"))
 
             if source_end and source_end.is_dir():
-                shutil.move(str(source_end), str(self._worlds_dir / f"{base}_the_end"))
+                shutil.move(str(source_end), str(self._worlds_dir / base / "world_the_end"))
 
-        # After migration, update level-name so PaperMC finds the new location
+        # ── Phase 2: Old flat worlds/ → nested container structure ──
+        # Detect when worlds/<name>/ itself contains level.dat (old flat format)
+        for entry in sorted(self._worlds_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            base_name = entry.name
+            # Skip hidden / staging directories and dimension directories
+            if base_name.startswith("."):
+                continue
+            if base_name.endswith("_nether") or base_name.endswith("_the_end"):
+                continue
+            # Already nested? Skip
+            if (entry / "world").is_dir():
+                continue
+            # Old flat format: the directory itself IS the overworld
+            if (entry / "level.dat").exists():
+                # Move to nested structure via staging directory
+                staging = entry.with_name(f"._migrate_{base_name}")
+                try:
+                    entry.rename(staging)
+                    container = self._worlds_dir / base_name
+                    container.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(staging), str(container / "world"))
+
+                    # Also move companion dims if they're in the old flat format
+                    for suffix in ("_nether", "_the_end"):
+                        flat_dim = self._worlds_dir / f"{base_name}{suffix}"
+                        if flat_dim.is_dir():
+                            shutil.move(str(flat_dim), str(container / f"world{suffix}"))
+
+                    migrated += 1
+                except OSError:
+                    # Rollback: move staging back
+                    if staging.exists():
+                        staging.rename(entry)
+                    raise
+
+        # ── Update level-name after migration ──
         if migrated > 0:
             active = self._get_active_world()
-            # Only fix if level-name still points to root (not worlds/ prefix)
+            # Fix root-level level-name → nested
             if active and not active.startswith("worlds/") and not active.startswith("worlds\\"):
-                self._set_active_world(f"worlds/{active}")
+                self._set_active_world(self._make_level_name(active))
+            # Fix old flat worlds/ level-name → nested
+            elif active:
+                extracted = self._extract_world_name(active)
+                # If the level-name doesn't end with /world, fix it
+                normalized = active.replace("\\", "/")
+                if not normalized.endswith("/world"):
+                    self._set_active_world(self._make_level_name(extracted))
 
         return migrated
 
@@ -331,13 +405,18 @@ class WorldManager:
     def _get_dimension_paths(self, name: str) -> dict[str, Path]:
         """Return Paths for the three dimensions of a world.
 
+        Dimensions are nested inside the world container:
+        ``worlds/<name>/world/``, ``worlds/<name>/world_nether/``,
+        ``worlds/<name>/world_the_end/``.
+
         Returns:
             Dict with keys ``overworld``, ``nether``, ``end``.
         """
+        container = self._worlds_dir / name
         return {
-            "overworld": self._worlds_dir / name,
-            "nether": self._worlds_dir / f"{name}_nether",
-            "end": self._worlds_dir / f"{name}_the_end",
+            "overworld": container / "world",
+            "nether": container / "world_nether",
+            "end": container / "world_the_end",
         }
 
     def _dimension_sizes(self, dims: dict[str, Path]) -> dict[str, int]:
@@ -362,19 +441,24 @@ class WorldManager:
     def _get_active_world(self) -> str:
         """Read ``level-name`` from ``server.properties``.
 
-        Returns the raw value (e.g. ``"worlds/world"`` or ``"world"``).
+        Returns the raw value (e.g. ``"worlds/world/world"`` or ``"world"``).
         """
         props_path = self._server_dir / "server.properties"
         if not props_path.exists():
-            return "worlds/world"
+            return "worlds/world/world"
         for line in props_path.read_text(encoding="utf-8").splitlines():
             stripped = line.strip()
             if stripped.startswith("level-name="):
                 return stripped.split("=", 1)[1].strip()
-        return "worlds/world"
+        return "worlds/world/world"
 
     def _set_active_world(self, name: str) -> None:
-        """Update the ``level-name`` entry in ``server.properties`` (atomic)."""
+        """Update the ``level-name`` entry in ``server.properties`` (atomic).
+
+        Args:
+            name: The full level-name value to write
+                  (e.g. ``"worlds/hello/world"``).
+        """
         props_path = self._server_dir / "server.properties"
         if not props_path.exists():
             return
