@@ -203,13 +203,13 @@ class WorldManager:
         return True
 
     def activate_world(self, name: str) -> bool:
-        """Set *name* as the active world in ``server.properties``.
+        """Set *name* as the active world in ``server.properties`` and ``config.yaml``.
 
         Args:
             name: Base world name (without ``worlds/`` prefix).
 
         Returns:
-            True if the overworld exists and ``server.properties`` was updated.
+            True if the overworld exists and both files were updated.
         """
         if not self.validate_world_name(name):
             return False
@@ -217,6 +217,26 @@ class WorldManager:
         if not world_path.exists():
             return False
         self._set_active_world(f"worlds/{name}")
+
+        # Also sync config.yaml so ServerPropertiesGenerator stays in sync
+        try:
+            import yaml
+            cm_path = Path("config/config.yaml")
+            if cm_path.exists():
+                raw = yaml.safe_load(cm_path.read_text(encoding="utf-8")) or {}
+                raw.setdefault("world", {})["level_name"] = f"worlds/{name}"
+                # Atomic write
+                import tempfile
+                fd, tmp = tempfile.mkstemp(dir=cm_path.parent, prefix="config_", suffix=".tmp")
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                        yaml.dump(raw, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                    os.replace(tmp, str(cm_path))
+                except Exception:
+                    os.unlink(tmp)
+        except Exception:
+            pass
+
         return True
 
     def get_active_world(self) -> str:
@@ -294,6 +314,13 @@ class WorldManager:
 
             if source_end and source_end.is_dir():
                 shutil.move(str(source_end), str(self._worlds_dir / f"{base}_the_end"))
+
+        # After migration, update level-name so PaperMC finds the new location
+        if migrated > 0:
+            active = self._get_active_world()
+            # Only fix if level-name still points to root (not worlds/ prefix)
+            if active and not active.startswith("worlds/") and not active.startswith("worlds\\"):
+                self._set_active_world(f"worlds/{active}")
 
         return migrated
 

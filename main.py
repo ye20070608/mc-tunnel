@@ -248,6 +248,25 @@ def main() -> None:
     if migrated > 0:
         logger.info(f"已迁移 {migrated} 个世界到 worlds/ 目录")
 
+    # Clean up orphaned root-level world dirs that PaperMC may have
+    # regenerated because the old level-name didn't use the worlds/ prefix.
+    active = wm._get_active_world()  # noqa: SLF001
+    import shutil as _shutil
+    server_root = Path.cwd() / "server"
+    for _dim in ("world", "world_nether", "world_the_end"):
+        _root_dir = server_root / _dim
+        _worlds_dir = server_root / "worlds" / _dim
+        if _root_dir.is_dir() and _worlds_dir.is_dir():
+            logger.warning(
+                "发现孤立的世界目录: {} (已迁移到 {})，自动清理",
+                _root_dir, _worlds_dir,
+            )
+            try:
+                _shutil.rmtree(_root_dir)
+                logger.info("已清理: {}", _root_dir)
+            except OSError as exc:
+                logger.warning("无法清理 {}: {}", _root_dir, exc)
+
     # 创建 MC 适配器
     from core.mcserver.adapter import MCServerAdapter
     mc_adapter = MCServerAdapter(cfg, logger)

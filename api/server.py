@@ -57,15 +57,24 @@ def switch_version():
         return jsonify({"error": "not_available", "message": "MC adapter not available"}), 503
 
     try:
+        was_running = adapter.is_running()
+
         # Stop server first
-        if adapter.is_running():
+        if was_running:
             adapter.stop()
 
         result = adapter.switch_version(version)
         if not result:
             return jsonify({"error": "switch_failed", "message": f"Version '{version}' JAR not found"}), 404
 
-        return jsonify({"success": True, "message": f"Switched to {version}. Server restart required."})
+        # Auto-restart if the server was running before the switch
+        if was_running:
+            adapter.start()
+
+        return jsonify({
+            "success": True,
+            "message": f"Switched to {version}" + (" and server restarted" if was_running else ". Start server to apply."),
+        })
     except Exception as e:
         current_app.logger.error("Failed to switch version: {}", e)
         return jsonify({"error": "switch_failed", "message": str(e)}), 500
@@ -242,7 +251,16 @@ def activate_world():
         result = wm.activate_world(name)
         if not result:
             return jsonify({"error": "not_found", "message": f"World '{name}' not found"}), 404
-        return jsonify({"success": True, "message": f"Active world set to '{name}'"})
+
+        # Check if server is running — world change only takes effect on restart
+        adapter = _get_adapter()
+        restart_required = adapter is not None and adapter.is_running()
+
+        return jsonify({
+            "success": True,
+            "message": f"Active world set to '{name}'" + (" (restart to apply)" if restart_required else ""),
+            "restart_required": restart_required,
+        })
     except Exception as e:
         current_app.logger.error("Failed to activate world: {}", e)
         return jsonify({"error": "activate_world_error", "message": str(e)}), 500

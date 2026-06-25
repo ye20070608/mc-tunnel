@@ -716,6 +716,28 @@ class MCServerAdapter:
         except Exception:
             pass
 
+        # Rebuild the process command to use the new JAR
+        new_jar = str(matches[0])
+        jvm_parts = self._config.mc.jvm_args.split()
+        new_cmd = [
+            self._config.mc.java_path,
+            "-Dfile.encoding=UTF-8",
+            "-Dsun.stdout.encoding=UTF-8",
+            "-Dsun.stderr.encoding=UTF-8",
+            *jvm_parts,
+            "-jar", new_jar, "nogui",
+        ]
+        from core.procman.manager import ProcessManager as PM
+        self._process = PM(
+            name="paper-mc",
+            cmd=new_cmd,
+            logger=self._log,
+            auto_restart=self._config.mc.auto_restart,
+            restart_max=self._config.mc.restart_max_retries,
+            stdout_callback=self._on_server_output,
+            cwd=Path.cwd() / "server",
+        )
+
         self._log.info("Switched active version to {}", version)
         return True
 
@@ -844,15 +866,34 @@ class MCServerAdapter:
     def _find_jar(self) -> str:
         """Locate the Minecraft server JAR file in the working directory.
 
-        Searches for ``paper-*.jar``, ``minecraft_server*.jar``, and
-        ``server.jar`` in order.
+        Priority:
+        1. ``mc.server_jar`` from config (explicit path set by switch_version)
+        2. ``paper-{mc.version}-*.jar`` matching the configured version
+        3. Any ``paper-*.jar``, ``minecraft_server*.jar``, or ``server.jar``
+        4. ``"paper.jar"`` as last-resort fallback
 
         Returns:
-            Path to the first matching JAR, or ``"paper.jar"`` as fallback.
+            Path to the best matching JAR.
         """
         server_dir = Path.cwd() / "server"
+
+        # 1) Explicit path from config (written by switch_version)
+        explicit = self._config.mc.server_jar
+        if explicit and Path(explicit).exists():
+            self._log.info("Using explicit server jar: {}", explicit)
+            return explicit
+
+        # 2) Match configured version
+        ver = self._config.mc.version
+        if ver:
+            matches = sorted(server_dir.glob(f"paper-{ver}-*.jar"), reverse=True)
+            if matches:
+                self._log.info("Found version-matched server jar: {}", matches[0].name)
+                return str(matches[0])
+
+        # 3) Fallback: any paper jar (newest first via reverse sort)
         for pattern in ("paper-*.jar", "minecraft_server*.jar", "server.jar"):
-            matches = list(server_dir.glob(pattern))
+            matches = sorted(server_dir.glob(pattern), reverse=True)
             if matches:
                 jar_path = str(matches[0])
                 self._log.info("Found server jar: {}", jar_path)
