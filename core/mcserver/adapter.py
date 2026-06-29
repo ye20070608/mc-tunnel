@@ -1,6 +1,7 @@
 """Minecraft server adapter — wraps PaperMC lifecycle and RCON."""
 from __future__ import annotations
 
+import os
 import re
 import time
 from datetime import datetime
@@ -732,20 +733,20 @@ class MCServerAdapter:
         if not matches:
             return False
 
+        jar_rel = os.path.relpath(str(matches[0]), str(Path.cwd()))
         # Update in-memory config
         self._config.mc.version = version
-        self._config.mc.server_jar = str(matches[0])
+        self._config.mc.server_jar = jar_rel
 
         # Persist to YAML (原子写入，防止文件损坏)
         try:
-            import os
             import tempfile
             cm = ConfigManager("config/config.yaml")
             with open(cm.config_path, "r", encoding="utf-8") as fh:
                 import yaml
                 raw: dict = yaml.safe_load(fh) or {}
             raw.setdefault("mc", {})["version"] = version
-            raw.setdefault("mc", {})["server_jar"] = str(matches[0])
+            raw.setdefault("mc", {})["server_jar"] = jar_rel
 
             config_dir = os.path.dirname(cm.config_path) or "."
             fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".yaml")

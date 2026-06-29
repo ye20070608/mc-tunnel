@@ -41,7 +41,7 @@ tunnel:
   sakura_mode: true
   login_fail_exit: false
 world:
-  level_name: worlds/world/world
+  level_name: worlds/1_21_11_test/world
   gamemode: creative
   difficulty: easy
   seed: ''
