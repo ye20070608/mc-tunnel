@@ -636,8 +636,9 @@ class MCServerAdapter:
     def get_installed_versions(self) -> list[dict]:
         """Return a list of installed PaperMC JAR versions.
 
-        Scans the working directory for ``paper-*.jar`` files and
-        extracts version and build numbers.
+        Scans ``server/versions/*/`` for ``paper-*.jar`` files and
+        extracts version and build numbers.  Also scans the legacy
+        flat ``server/`` layout for backward compatibility.
 
         Returns:
             List of dicts with ``version``, ``build``, ``file_name``,
@@ -646,9 +647,27 @@ class MCServerAdapter:
         from pathlib import Path
 
         jars: list[dict] = []
+        # Primary: version-isolated directories
+        versions_root = Path.cwd().joinpath("server", "versions")
+        if versions_root.exists():
+            for jar_path in sorted(versions_root.glob("*/paper-*.jar"), reverse=True):
+                name = jar_path.name
+                stem = name.replace(".jar", "")
+                parts = stem.split("-")
+                version = parts[1] if len(parts) > 1 else "unknown"
+                build = parts[2] if len(parts) > 2 else "0"
+                size_mb = round(jar_path.stat().st_size / (1024 * 1024), 1)
+                active = self._config.mc.version == version
+                jars.append({
+                    "version": version,
+                    "build": build,
+                    "file_name": name,
+                    "size_mb": size_mb,
+                    "active": active,
+                })
+        # Legacy: flat server/ directory
         for jar_path in sorted(Path.cwd().joinpath("server").glob("paper-*.jar"), reverse=True):
             name = jar_path.name
-            # Parse: paper-{version}-{build}.jar
             stem = name.replace(".jar", "")
             parts = stem.split("-")
             version = parts[1] if len(parts) > 1 else "unknown"
@@ -695,24 +714,39 @@ class MCServerAdapter:
             self._log.warning("Invalid version string rejected: {}", version)
             return False
 
-        # Check that the version JAR exists
-        matches = list(Path.cwd().joinpath("server").glob(f"paper-{version}-*.jar"))
+        # Check that the version JAR exists in the version-isolated directory
+        version_dir = Path.cwd().joinpath("server", "versions", version)
+        matches = list(version_dir.glob(f"paper-{version}-*.jar"))
+        # Fallback: legacy flat layout
+        if not matches:
+            matches = list(Path.cwd().joinpath("server").glob(f"paper-{version}-*.jar"))
         if not matches:
             return False
 
         # Update in-memory config
         self._config.mc.version = version
+        self._config.mc.server_jar = str(matches[0])
 
-        # Persist to YAML
+        # Persist to YAML (原子写入，防止文件损坏)
         try:
+            import os
+            import tempfile
             cm = ConfigManager("config/config.yaml")
             with open(cm.config_path, "r", encoding="utf-8") as fh:
                 import yaml
                 raw: dict = yaml.safe_load(fh) or {}
             raw.setdefault("mc", {})["version"] = version
             raw.setdefault("mc", {})["server_jar"] = str(matches[0])
-            with open(cm.config_path, "w", encoding="utf-8") as fh:
-                yaml.dump(raw, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+            config_dir = os.path.dirname(cm.config_path) or "."
+            fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".yaml")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    yaml.dump(raw, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                os.replace(tmp_path, cm.config_path)
+            except Exception:
+                os.unlink(tmp_path)
+                raise
         except Exception:
             pass
 
@@ -867,36 +901,47 @@ class MCServerAdapter:
         """Locate the Minecraft server JAR file in the working directory.
 
         Priority:
-        1. ``mc.server_jar`` from config (explicit path set by switch_version)
-        2. ``paper-{mc.version}-*.jar`` matching the configured version
-        3. Any ``paper-*.jar``, ``minecraft_server*.jar``, or ``server.jar``
-        4. ``"paper.jar"`` as last-resort fallback
+        1. ``mc.server_jar`` from config (explicit path)
+        2. ``server/versions/{version}/paper-{version}-*.jar`` matching configured version
+        3. ``server/versions/*/paper-*.jar`` (any installed version, newest first)
+        4. Legacy fallback: ``server/paper-*.jar``, ``server/server.jar``
+        5. ``"paper.jar"`` as last-resort fallback
 
         Returns:
             Path to the best matching JAR.
         """
         server_dir = Path.cwd() / "server"
 
-        # 1) Explicit path from config (written by switch_version)
+        # 1) Explicit path from config
         explicit = self._config.mc.server_jar
         if explicit and Path(explicit).exists():
             self._log.info("Using explicit server jar: {}", explicit)
             return explicit
 
-        # 2) Match configured version
+        # 2) Match configured version — server/versions/{version}/
         ver = self._config.mc.version
         if ver:
-            matches = sorted(server_dir.glob(f"paper-{ver}-*.jar"), reverse=True)
+            version_dir = server_dir / "versions" / ver
+            matches = sorted(version_dir.glob(f"paper-{ver}-*.jar"), reverse=True)
             if matches:
                 self._log.info("Found version-matched server jar: {}", matches[0].name)
                 return str(matches[0])
 
-        # 3) Fallback: any paper jar (newest first via reverse sort)
+        # 3) Fallback: any installed version — server/versions/*/
+        versions_root = server_dir / "versions"
+        if versions_root.exists():
+            matches = sorted(versions_root.glob("*/paper-*.jar"), reverse=True)
+            if matches:
+                jar_path = str(matches[0])
+                self._log.info("Found server jar in versions/: {}", jar_path)
+                return jar_path
+
+        # 4) Legacy fallback: flat server/ directory (pre-migration)
         for pattern in ("paper-*.jar", "minecraft_server*.jar", "server.jar"):
             matches = sorted(server_dir.glob(pattern), reverse=True)
             if matches:
                 jar_path = str(matches[0])
-                self._log.info("Found server jar: {}", jar_path)
+                self._log.info("Found server jar (legacy): {}", jar_path)
                 return jar_path
 
         fallback = "paper.jar"
