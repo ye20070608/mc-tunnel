@@ -954,12 +954,16 @@ async function createWorld() {
   var name = nameInput ? nameInput.value.trim() : '';
   if (!name) { alert('请输入世界名称'); return; }
 
+  var seedInput = document.getElementById('new-world-seed');
+  var seed = seedInput ? seedInput.value.trim() : '';
+
   try {
-    var data = await apiCall('/api/server/worlds/create', 'POST', { name: name });
+    var data = await apiCall('/api/server/worlds/create', 'POST', { name: name, seed: seed });
     showToast(data.message || '世界已创建');
     var modal = document.getElementById('modal-create-world');
     if (modal) modal.classList.remove('active');
     if (nameInput) nameInput.value = '';
+    if (seedInput) seedInput.value = '';
     loadWorlds();
   } catch (err) {
     showToast('创建失败: ' + (err.message || '网络错误'));
