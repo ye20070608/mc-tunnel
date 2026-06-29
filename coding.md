@@ -1,6 +1,6 @@
 # 编码规范
 
-> 项目：MC隧道控制器 (mc-tunnel) | 版本：v1.2 | 日期：2026-06-25
+> 项目：MC隧道控制器 (mc-tunnel) | 版本：v1.3 | 日期：2026-06-30
 >
 > Python + Flask 实现。本规范基于实际代码库制定。
 
@@ -218,15 +218,18 @@ feature/stage-N          # 对应 Task.md 中的阶段
 ### 5.2 提交信息格式
 
 ```
-[T1.3] feat(config): 支持YAML配置热重载
-[T2.1] fix(procman): 修复子进程超时未正确杀死的问题
-[T5.8] refactor(audit): 操作日志存储从文件改为SQLite
+feat: 简短中文描述
+fix: 修复问题描述
+refactor: 重构描述
+docs: 文档更新
+test: 测试相关
+chore: 杂项（清理/配置）
+security: 安全修复
 ```
 
-- 前缀：`[TaskID]`
-- 类型：`feat` / `fix` / `refactor` / `docs` / `test` / `chore`
-- 范围：涉及模块名
-- 说明：中文或英文，描述清晰
+- 类型：`feat` / `fix` / `refactor` / `docs` / `test` / `chore` / `security`
+- 说明：中文简短描述
+- 末尾追加 `Co-Authored-By: Claude <noreply@anthropic.com>`
 
 ### 5.3 代码审查要求
 
