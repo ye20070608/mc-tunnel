@@ -150,3 +150,8 @@ bandit -r core/ api/ -ll              # 安全扫描
 ## License
 
 MIT
+
+## 联系方式
+
+- 作者邮箱：ye20070608@126.com
+- 欢迎提交 Issue 和 Pull Request
