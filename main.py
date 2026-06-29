@@ -38,7 +38,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
         pass
 
 from logger import setup_logger, logger
-from config.loader import load_config
+from config.loader import load_config, Config
 from core.mcserver.java import detect_java, check_java_version
 from core.mcserver.downloader import (
     ensure_server_jar,
@@ -61,6 +61,41 @@ def _parse_args() -> argparse.Namespace:
         help="指定 PaperMC 版本（如 1.21、1.20.4），留空则使用配置或交互式选择",
     )
     return parser.parse_args()
+
+
+def _persist_runtime_config(cfg: Config) -> None:
+    """原子写入运行时配置到 config.yaml。
+
+    持久化 java_path、version、server_jar 等运行时决定的配置项，
+    确保下次启动时能正确加载，避免版本/JAR 路径不一致。
+    """
+    import os
+    import tempfile
+    import yaml
+    from config.loader import ConfigManager
+
+    cm = ConfigManager("config/config.yaml")
+    try:
+        with open(cm.config_path, "r", encoding="utf-8") as fh:
+            raw: dict = yaml.safe_load(fh) or {}
+    except Exception:
+        logger.warning("无法读取配置文件，跳过持久化")
+        return
+
+    raw.setdefault("mc", {})["java_path"] = cfg.mc.java_path
+    raw.setdefault("mc", {})["version"] = cfg.mc.version
+    raw.setdefault("mc", {})["server_jar"] = cfg.mc.server_jar
+
+    config_dir = os.path.dirname(cm.config_path) or "."
+    fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".yaml")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            yaml.dump(raw, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        os.replace(tmp_path, cm.config_path)
+        logger.debug("运行时配置已持久化到 config.yaml")
+    except Exception as exc:
+        os.unlink(tmp_path)
+        logger.warning("配置持久化失败: {}", exc)
 
 
 def _interactive_select_version() -> str:
@@ -193,7 +228,10 @@ def main() -> None:
         pass
     else:
         # 没有当前版本 JAR，检查是否有其他版本
-        other_jars = list(Path(output_dir).glob("paper-*.jar"))
+        other_jars = list(Path(output_dir).glob("versions/*/paper-*.jar"))
+        if not other_jars:
+            # 旧版平铺结构兼容
+            other_jars = list(Path(output_dir).glob("paper-*.jar"))
         if other_jars and not args.version:
             other_jars.sort(reverse=True)
             current_name = other_jars[0].name
@@ -232,6 +270,10 @@ def main() -> None:
     # ── 7. 构建运行时组件 ─────────────────────────────────────
     cfg.mc.java_path = java_path
     cfg.mc.version = target_version
+    cfg.mc.server_jar = str(jar_path)
+
+    # 原子持久化运行时配置到磁盘
+    _persist_runtime_config(cfg)
 
     # 创建审计日志
     from core.audit.logger import AuditLogger
