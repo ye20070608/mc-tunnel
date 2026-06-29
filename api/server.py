@@ -153,6 +153,7 @@ def create_world():
     """Create a new world directory."""
     data = request.get_json(silent=True) or request.form
     name = (data or {}).get("name", "").strip()
+    seed = (data or {}).get("seed", "").strip()
     if not name:
         return jsonify({"error": "invalid_input", "message": "World name is required"}), 400
 
@@ -162,7 +163,7 @@ def create_world():
 
     try:
         wm = WorldManager()
-        result = wm.create_world(name)
+        result = wm.create_world(name, seed=seed)
         if not result:
             return jsonify({"error": "already_exists", "message": f"World '{name}' already exists"}), 409
         return jsonify({"success": True, "message": f"World '{name}' created"})

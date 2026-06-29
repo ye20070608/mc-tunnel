@@ -151,7 +151,7 @@ class WorldManager:
 
         return worlds
 
-    def create_world(self, name: str) -> bool:
+    def create_world(self, name: str, seed: str = "") -> bool:
         """Create a new world (container + overworld with ``session.lock``).
 
         The nether / end directories are NOT created here; the MC server
@@ -161,6 +161,7 @@ class WorldManager:
         Args:
             name: Base world name (e.g. ``"creative"`` →
                   ``worlds/creative/world/``).
+            seed: Optional world seed (empty = random).
 
         Returns:
             True if created, False if it already existed.
@@ -173,6 +174,10 @@ class WorldManager:
 
         overworld.mkdir(parents=True, exist_ok=True)
         (overworld / "session.lock").write_text("", encoding="utf-8")
+
+        # 如果指定了种子，写入 server.properties
+        if seed:
+            self._set_property("level-seed", seed)
         return True
 
     def delete_world(self, name: str) -> bool:
@@ -474,6 +479,34 @@ class WorldManager:
 
         if not updated:
             lines.append(f"level-name={name}")
+
+        # Atomic write via temp file
+        tmp_path = Path(str(props_path) + ".tmp")
+        tmp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        os.replace(str(tmp_path), str(props_path))
+
+    def _set_property(self, key: str, value: str) -> None:
+        """Set a single property in ``server.properties`` (atomic write).
+
+        Args:
+            key: Property key (e.g. ``"level-seed"``).
+            value: Property value.
+        """
+        props_path = self._server_dir / "server.properties"
+        if not props_path.exists():
+            return
+
+        lines = props_path.read_text(encoding="utf-8").splitlines()
+        updated = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith(f"{key}="):
+                lines[i] = f"{key}={value}"
+                updated = True
+                break
+
+        if not updated:
+            lines.append(f"{key}={value}")
 
         # Atomic write via temp file
         tmp_path = Path(str(props_path) + ".tmp")
