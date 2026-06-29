@@ -647,40 +647,46 @@ class MCServerAdapter:
         from pathlib import Path
 
         jars: list[dict] = []
-        # Primary: version-isolated directories
-        versions_root = Path.cwd().joinpath("server", "versions")
-        if versions_root.exists():
-            for jar_path in sorted(versions_root.glob("*/paper-*.jar"), reverse=True):
-                name = jar_path.name
-                stem = name.replace(".jar", "")
-                parts = stem.split("-")
-                version = parts[1] if len(parts) > 1 else "unknown"
-                build = parts[2] if len(parts) > 2 else "0"
-                size_mb = round(jar_path.stat().st_size / (1024 * 1024), 1)
-                active = self._config.mc.version == version
-                jars.append({
-                    "version": version,
-                    "build": build,
-                    "file_name": name,
-                    "size_mb": size_mb,
-                    "active": active,
-                })
-        # Legacy: flat server/ directory
-        for jar_path in sorted(Path.cwd().joinpath("server").glob("paper-*.jar"), reverse=True):
+        seen: dict[str, dict] = {}  # version → best entry (highest build)
+
+        def _collect(jar_path: Path) -> None:
             name = jar_path.name
             stem = name.replace(".jar", "")
             parts = stem.split("-")
             version = parts[1] if len(parts) > 1 else "unknown"
-            build = parts[2] if len(parts) > 2 else "0"
+            build_str = parts[2] if len(parts) > 2 else "0"
+            try:
+                build = int(build_str)
+            except ValueError:
+                build = 0
             size_mb = round(jar_path.stat().st_size / (1024 * 1024), 1)
-            active = self._config.mc.version == version
-            jars.append({
-                "version": version,
-                "build": build,
-                "file_name": name,
-                "size_mb": size_mb,
-                "active": active,
-            })
+            # 同版本保留最高 build 号（有 build 号的 PaperMC 下载优先于无 build 的 Paperclip 产物）
+            if version not in seen or build > seen[version]["_build_num"]:
+                seen[version] = {
+                    "version": version,
+                    "build": build_str,
+                    "file_name": name,
+                    "size_mb": size_mb,
+                    "_build_num": build,
+                }
+
+        # Primary: version-isolated directories
+        versions_root = Path.cwd().joinpath("server", "versions")
+        if versions_root.exists():
+            for jar_path in sorted(versions_root.glob("*/paper-*.jar"), reverse=True):
+                _collect(jar_path)
+
+        # Legacy: flat server/ directory
+        for jar_path in sorted(Path.cwd().joinpath("server").glob("paper-*.jar"), reverse=True):
+            _collect(jar_path)
+
+        for entry in seen.values():
+            entry["active"] = self._config.mc.version == entry["version"]
+            del entry["_build_num"]
+            jars.append(entry)
+
+        # Sort by version (newest first)
+        jars.sort(key=lambda e: [int(x) for x in e["version"].split(".")], reverse=True)
         return jars
 
     @staticmethod
@@ -717,9 +723,12 @@ class MCServerAdapter:
         # Check that the version JAR exists in the version-isolated directory
         version_dir = Path.cwd().joinpath("server", "versions", version)
         matches = list(version_dir.glob(f"paper-{version}-*.jar"))
+        # 兼容无 build 号的文件名: paper-{version}.jar
+        matches += list(version_dir.glob(f"paper-{version}.jar"))
         # Fallback: legacy flat layout
         if not matches:
             matches = list(Path.cwd().joinpath("server").glob(f"paper-{version}-*.jar"))
+            matches += list(Path.cwd().joinpath("server").glob(f"paper-{version}.jar"))
         if not matches:
             return False
 
@@ -923,6 +932,9 @@ class MCServerAdapter:
         if ver:
             version_dir = server_dir / "versions" / ver
             matches = sorted(version_dir.glob(f"paper-{ver}-*.jar"), reverse=True)
+            # 兼容无 build 号的文件名: paper-{version}.jar
+            matches_no_build = sorted(version_dir.glob(f"paper-{ver}.jar"), reverse=True)
+            matches = matches + matches_no_build
             if matches:
                 self._log.info("Found version-matched server jar: {}", matches[0].name)
                 return str(matches[0])

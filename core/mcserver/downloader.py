@@ -462,6 +462,8 @@ def _find_existing_jar(version: str, output_dir: str) -> Path | None:
     # 1. 精确版本匹配 — server/versions/{version}/
     versions_dir = base / "versions" / version
     matches = list(versions_dir.glob(f"paper-{version}-*.jar"))
+    # 兼容无 build 号的文件名: paper-{version}.jar
+    matches += list(versions_dir.glob(f"paper-{version}.jar"))
     if matches:
         matches.sort(reverse=True)  # 取最新 build
         logger.debug("Found JAR in versions/{}: {}", version, matches[0].name)
