@@ -266,6 +266,13 @@ def main() -> None:
             logger.error("Mojang EULA 未同意，无法启动 MC 服务端")
             sys.exit(1)
         write_eula(server_dir)
+    # Paperclip 的 cwd 是 server/，确保 eula.txt 在那里也有副本
+    import shutil
+    _eula_src = Path(server_dir) / "eula.txt"
+    _eula_dst = Path(output_dir) / "eula.txt"
+    if _eula_src.exists() and not _eula_dst.exists():
+        shutil.copy2(_eula_src, _eula_dst)
+        logger.info(f"EULA 已同步到 server/eula.txt")
 
     # ── 7. 构建运行时组件 ─────────────────────────────────────
     cfg.mc.java_path = java_path
