@@ -63,6 +63,15 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _to_relpath(path: str | Path) -> str:
+    """Convert an absolute path to one relative to the project root."""
+    import os as _os
+    try:
+        return _os.path.relpath(str(path), str(Path.cwd()))
+    except ValueError:
+        return str(path)
+
+
 def _persist_runtime_config(cfg: Config) -> None:
     """原子写入运行时配置到 config.yaml。
 
@@ -277,7 +286,7 @@ def main() -> None:
     # ── 7. 构建运行时组件 ─────────────────────────────────────
     cfg.mc.java_path = java_path
     cfg.mc.version = target_version
-    cfg.mc.server_jar = str(jar_path)
+    cfg.mc.server_jar = _to_relpath(jar_path)
 
     # 原子持久化运行时配置到磁盘
     _persist_runtime_config(cfg)
