@@ -347,6 +347,14 @@ def _ensure_mojang_jar(
     jar_name = f"mojang_{version}.jar"
     cache_path = cache_dir / jar_name
 
+    # 如果对应版本目录不存在（用户已删除该版本），清理孤儿缓存
+    version_dir = Path(output_dir) / "versions" / version
+    if not version_dir.exists() and not list(Path(output_dir).glob(f"paper-{version}-*.jar")):
+        if cache_path.exists():
+            cache_path.unlink()
+            logger.info(f"清理孤儿 Mojang 缓存: {jar_name}（版本 {version} 已删除）")
+        return None
+
     # Already cached — nothing to do
     if cache_path.exists():
         size_mb = cache_path.stat().st_size / (1024 * 1024)
@@ -485,7 +493,7 @@ def ensure_server_jar(
             name = path.name
             import re
             # 检查是否为 PaperMC 标准命名 JAR (paper-{version}-{build}.jar)
-            paper_match = re.match(r"^paper-([\d.]+)-\d+\.jar$", name)
+            paper_match = re.match(r"^paper-([\d.]+)(?:-\d+)?\.jar$", name)
             if paper_match:
                 jar_version = paper_match.group(1)
                 if jar_version == version:
@@ -513,7 +521,7 @@ def ensure_server_jar(
         # 校验找到的 JAR 是否匹配请求的版本
         import re as _re
         _name = existing.name
-        _match = _re.match(r"^paper-([\d.]+)-\d+\.jar$", _name)
+        _match = _re.match(r"^paper-([\d.]+)(?:-\d+)?\.jar$", _name)
         if _match and _match.group(1) != version:
             # 回退找到了其他版本的 JAR，不匹配请求版本 → 进入下载
             logger.info(
