@@ -343,23 +343,28 @@ def _ensure_mojang_jar(
         Path to the cached JAR, or ``None`` if the download failed or
         the Mojang API didn't provide a URL.
     """
-    cache_dir = Path(output_dir) / "cache"
     jar_name = f"mojang_{version}.jar"
+    version_dir = Path(output_dir) / "versions" / version
+    version_dir.mkdir(parents=True, exist_ok=True)
+    version_path = version_dir / jar_name
+
+    # Paperclip 在 cwd=server/ 下查找 cache/mojang_{v}.jar
+    cache_dir = Path(output_dir) / "cache"
     cache_path = cache_dir / jar_name
 
-    # 如果对应版本目录不存在（用户已删除该版本），清理孤儿缓存
-    version_dir = Path(output_dir) / "versions" / version
-    if not version_dir.exists() and not list(Path(output_dir).glob(f"paper-{version}-*.jar")):
-        if cache_path.exists():
-            cache_path.unlink()
-            logger.info(f"清理孤儿 Mojang 缓存: {jar_name}（版本 {version} 已删除）")
-        return None
-
-    # Already cached — nothing to do
-    if cache_path.exists():
-        size_mb = cache_path.stat().st_size / (1024 * 1024)
+    # 已存在于版本目录 → 无需下载，确保 cache 副本就绪
+    if version_path.exists():
+        size_mb = version_path.stat().st_size / (1024 * 1024)
         logger.info(f"Mojang 原版 JAR 已缓存: {jar_name} ({size_mb:.1f} MB)")
-        return cache_path
+        _ensure_cache_copy(version_path, cache_path)
+        return version_path
+
+    # 旧文件在 cache/ 但版本目录没有 → 迁移到新位置
+    if cache_path.exists():
+        logger.info(f"迁移 Mojang 缓存: cache/{jar_name} → versions/{version}/")
+        cache_path.rename(version_path)
+        _ensure_cache_copy(version_path, cache_path)
+        return version_path
 
     logger.info(f"获取 Mojang {version} 服务端下载链接...")
     info = _get_mojang_server_info(version)
@@ -371,7 +376,7 @@ def _ensure_mojang_jar(
     total_mb = info.get("size", 0) / (1024 * 1024)
     logger.info(f"下载 Mojang {version} 原版服务端 ({total_mb:.0f} MB)...")
 
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    version_dir.mkdir(parents=True, exist_ok=True)
 
     def _mojang_progress(downloaded: int, total: int, _bps: int) -> None:
         _update_progress_state(version, downloaded, total, phase="mojang_jar")
@@ -389,7 +394,7 @@ def _ensure_mojang_jar(
     try:
         download_jar(
             download_url=info["url"],
-            output_path=cache_path,
+            output_path=version_path,
             expected_sha256="",  # Mojang 用 SHA1 而非 SHA256
             progress_callback=_mojang_progress,
             verify=True,  # Always try SSL first per request
@@ -397,15 +402,40 @@ def _ensure_mojang_jar(
         if show_progress:
             print()  # 换行
         _clear_progress_state()
+        # 确保 Paperclip 能在 cache/ 找到（cwd=server/）
+        _ensure_cache_copy(version_path, cache_path)
         logger.info(f"Mojang 原版 JAR 已缓存: {jar_name}")
     except Exception as exc:
         _clear_progress_state()
         logger.warning(f"Mojang 原版 JAR 下载失败（Paperclip 将尝试自行下载）: {exc}")
-        if cache_path.exists():
-            cache_path.unlink()
+        if version_path.exists():
+            version_path.unlink()
         return None
 
-    return cache_path
+    return version_path
+
+
+def _ensure_cache_copy(src: Path, dst: Path) -> None:
+    """确保 dst 指向 src 的最新副本。
+
+    Windows 用副本，Linux/macOS 用相对路径符号链接。
+    """
+    import shutil
+    import sys
+
+    if dst.exists() or dst.is_symlink():
+        dst.unlink()
+    dst.parent.mkdir(parents=True, exist_ok=True)
+
+    if sys.platform == "win32":
+        shutil.copy2(src, dst)
+    else:
+        import os
+        try:
+            rel = os.path.relpath(src, dst.parent)
+            dst.symlink_to(rel)
+        except OSError:
+            shutil.copy2(src, dst)
 
 
 # ---------------------------------------------------------------------------
