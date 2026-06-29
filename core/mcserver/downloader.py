@@ -510,16 +510,27 @@ def ensure_server_jar(
     # 2. 检查是否已有该版本的 JAR
     existing = _find_existing_jar(version, output_dir)
     if existing:
-        size_mb = existing.stat().st_size / (1024 * 1024)
-        logger.info(f"服务端 JAR 已存在: {existing.name} ({size_mb:.1f} MB)")
-        # 预下载 Mojang 原版 JAR 到 cache/（后台线程，不阻塞主启动流程）
-        threading.Thread(
-            target=_ensure_mojang_jar,
-            args=(version, output_dir, show_progress),
-            daemon=True,
-        ).start()
-        _mark_progress_done()
-        return existing.resolve()
+        # 校验找到的 JAR 是否匹配请求的版本
+        import re as _re
+        _name = existing.name
+        _match = _re.match(r"^paper-([\d.]+)-\d+\.jar$", _name)
+        if _match and _match.group(1) != version:
+            # 回退找到了其他版本的 JAR，不匹配请求版本 → 进入下载
+            logger.info(
+                f"已有 JAR ({_name}) 版本 {_match.group(1)} "
+                f"不匹配请求版本 {version}，将下载正确版本"
+            )
+        else:
+            size_mb = existing.stat().st_size / (1024 * 1024)
+            logger.info(f"服务端 JAR 已存在: {existing.name} ({size_mb:.1f} MB)")
+            # 预下载 Mojang 原版 JAR 到 cache/（后台线程，不阻塞主启动流程）
+            threading.Thread(
+                target=_ensure_mojang_jar,
+                args=(version, output_dir, show_progress),
+                daemon=True,
+            ).start()
+            _mark_progress_done()
+            return existing.resolve()
 
     # 3. 从 PaperMC 下载
     logger.info(f"PaperMC {version} — 获取最新构建信息...")
