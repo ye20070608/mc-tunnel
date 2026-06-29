@@ -36,7 +36,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 阶段 2 | ✅ 完成 | 进程管理器、MC 适配器、RCON 集成、白名单管理、本地 API |
 | 阶段 3 | ✅ 完成 | frp 配置生成器、frp 进程管理、TCP 代理层（协议嗅探）、UDP 预留、连接统计 |
 | 阶段 4 | ✅ 完成 | Flask 单端口 HTTP 服务器（8443）、状态 API、介绍页模板 |
-| 阶段 5 | ✅ 完成 | JWT 认证、CSRF 防护、管理后台全功能（服务控制/白名单/日志/穿透配置/审计） |
+| 阶段 5 | ✅ 完成 | JWT 认证、CSRF 防护、管理后台全功能（服务控制/白名单/日志/穿透配置/插件管理/审计） |
 | 阶段 6 | 🔧 进行中 | 整合测试、Bug 修复、功能增强 |
 | 阶段 7 | ○ 待完成 | 文档完善、打包发布、CI/CD |
 
@@ -136,6 +136,15 @@ main.py 构造实例  →  web/server.py:create_admin_app()
 
 添加新 API 端点时，遵循此模式：在 `register_routes` 中注入依赖，在蓝图中通过 `current_app.<attr>` 获取。
 
+#### 添加新 API 端点的步骤
+
+1. **创建 Blueprint**：在 `api/` 下新建 `xxx.py`，定义 `xxx_bp = Blueprint("xxx", __name__, url_prefix="/api/xxx")`
+2. **编写端点**：导入 `jwt_required`（需要登录）和 `csrf_protect`（状态变更）。通过 `current_app.mc_adapter`（等）访问核心服务。
+3. **注册 Blueprint**：在 `api/router.py` 的 `register_routes()` 中添加 `app.register_blueprint(xxx_bp)`
+4. **测试覆盖**：在 `tests/test_web_api.py` 中添加对应的 `test_xxx_*` 函数
+
+需要注入新依赖时：在 `main.py` 构造实例 → 传给 `run_server()` → 传给 `create_admin_app()` → 传给 `register_routes()` → 存储为 `app.<attr>`。
+
 ### frp 双模式
 
 隧道模块同时支持两种 frp 服务商，由配置自动切换：
@@ -170,12 +179,14 @@ venv\Scripts\python main.py --version 1.21  # 跳过交互式版本选择
 
 # 测试
 pytest tests/ --cov                          # 全部测试 + 覆盖率
-python tests/test_web_api.py                 # 集成测试（24 项 check，standalone 脚本 + mock 依赖）
+python tests/test_web_api.py                 # 集成测试（51+ 项 check，standalone 脚本 + mock 依赖）
+pytest tests/test_web_api.py::test_login_success -v  # 运行单个测试
 
 # 代码质量
 ruff format --check .          # 格式化检查
 ruff check .                   # Lint
 mypy core/ api/                # 类型检查（核心模块）
+bandit -r core/ api/ -ll       # 安全漏洞扫描
 ```
 
 ### 编码规范速查
@@ -185,8 +196,8 @@ mypy core/ api/                # 类型检查（核心模块）
 - **Python**：`ruff` 格式化 + lint；`mypy` 类型检查（核心模块必覆盖）；Flask 应用工厂模式 + Blueprint；`asyncio` 实现 TCP 代理
 - **前端**：Alpine.js + HTMX；轮询 10 秒间隔；CSRF Token 从 `<meta name="csrf-token">` 读取
 - **安全**：BCrypt cost ≥ 12；JWT 密钥 ≥ 256 bit；操作日志记录所有敏感操作；禁止日志泄露密码/Token；输入校验防 RCON 命令注入和目录穿越
-- **Git**：`[T1.3] feat(config): 描述`；`main` 可发布；`feature/stage-N` 分支开发
-- **🔴 每次修改代码后必须 commit**：每完成一个独立的代码改动（不管改了多少文件），立即执行 `git add -A && git commit -m "<简短描述>"`（末尾追加 `Co-Authored-By: Claude <noreply@anthropic.com>`）。目的是让每次改动都有独立的 git 记录，随时可以用 `git revert` 或 `git diff` 回溯。禁止攒一大批改动再统一 commit。
+- **Git**：`type: 简短中文描述`（`feat` / `fix` / `refactor` / `docs` / `test` / `chore` / `security`）；`main` 可发布；`feature/stage-N` 分支开发。末尾追加 `Co-Authored-By: Claude <noreply@anthropic.com>`。
+- **🔴 每次修改代码后必须 commit**：每完成一个独立的代码改动（不管改了多少文件），立即执行 `git add -A && git commit -m "<type>: <描述>"`。目的是让每次改动都有独立的 git 记录，随时可以用 `git revert` 或 `git diff` 回溯。禁止攒一大批改动再统一 commit。
 
 ### 配置
 
@@ -198,6 +209,7 @@ mypy core/ api/                # 类型检查（核心模块）
 - 支持通过 `ConfigManager` 运行时修改配置（如密码变更），所有写入使用 `tempfile.mkstemp` + `os.replace` 原子化
 - `web.ssl_enabled` 默认 true，首次启动自动生成自签名证书到 `config/certs/`
 - `world` 段驱动 `server.properties` 生成（通过 `core/mcserver/properties.py` 的 `ServerPropertiesGenerator`），含 gamemode/difficulty/pvp/online_mode/view_distance 等 15+ 字段
+- `intro` 段（可选，不在 Config dataclass 中）：自定义介绍页内容（`server_name`、`slogan`、`description`、`rules`、`features`），由 `_make_common_data()` 读取并注入 Jinja2 模板的 `{{data.intro.*}}`
 
 ### API 约定
 
@@ -227,6 +239,7 @@ MC服务器/
 │   │   ├── whitelist.py           # ✓ RCON 白名单管理（WhitelistManager）
 │   │   ├── worlds.py              # ✓ 世界管理（worlds/ 目录 + 三维度分组 + 迁移）
 │   │   ├── properties.py          # ✓ server.properties 生成器（从 WorldConfig）
+│   │   ├── plugins.py             # ✓ 插件管理（上传/删除/启用禁用 + zip 炸弹防护）
 │   │   ├── downloader.py          # ✓ PaperMC API 下载（含 SHA256 校验）
 │   │   ├── java.py                # ✓ Java 检测与版本校验（4 级查找策略）
 │   │   └── eula.py                # ✓ Mojang EULA 确认
@@ -252,6 +265,7 @@ MC服务器/
 │   ├── whitelist.py              # ✓ 白名单 API（CRUD/审计记录）
 │   ├── logs_api.py               # ✓ 日志 API（查询/过滤/导出）
 │   ├── server.py                 # ✓ 服务端管理 API（版本/世界/设置）
+│   ├── plugins.py                # ✓ 插件管理 API（上传/删除/启用禁用）
 │   └── middleware/
 │       ├── auth.py               # ✓ JWT 认证中间件（Bearer/Cookie/302+401 分流）
 │       └── csrf.py               # ✓ CSRF 防护中间件（HMAC/2h 过期/双模式校验）
@@ -260,13 +274,13 @@ MC服务器/
 │   ├── templates/
 │   │   ├── intro.html             # ✓ 介绍页模板（服务器状态展示）
 │   │   ├── login.html             # ✓ 登录页（JWT 认证流程）
-│   │   ├── admin.html             # ✓ 管理面板（6 卡片+Tab 导航+模态框+Toast）
+│   │   ├── admin.html             # ✓ 管理面板（6 卡片+Tab 导航+模态框+Toast，含插件管理）
 │   │   └── setup.html             # ✓ 5 步配置向导（MC/穿透/管理员/EULA 确认）
 │   └── static/
 │       ├── style.css              # ✓ 像素传奇设计系统（CSS 变量/Dark 主题）
 │       └── app.js                 # ✓ 前端 JS（API 客户端/轮询器/CSRF/标签切换/服务器操作）
 ├── tests/
-│   └── test_web_api.py            # ✓ 集成测试（24 项 check：认证/CSRF/API/白名单/日志/隧道/边界，standalone 脚本 + mock 依赖）
+│   └── test_web_api.py            # ✓ 集成测试（51+ 项 check：认证/CSRF/API/白名单/日志/隧道/插件/边界，standalone 脚本 + mock 依赖）
 ├── docs/
 │   ├── DECISIONS.md               # ✓ 技术选型（10 项决策）
 │   ├── user-guide.md              # ✓ 用户手册（10 章/567 行）

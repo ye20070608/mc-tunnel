@@ -408,9 +408,10 @@ def _find_existing_jar(version: str, output_dir: str) -> Path | None:
     """查找已存在的版本对应 JAR 文件。
 
     按优先级查找：
-    1. paper-{version}-*.jar（PaperMC 下载的精确匹配）
-    2. paper-*.jar（任何 PaperMC JAR）
-    3. server.jar（通用命名）
+    1. server/versions/{version}/paper-{version}-*.jar（精确匹配）
+    2. server/versions/*/paper-*.jar（任何已安装版本，取最新）
+    3. server/server.jar（通用命名）
+    4. server/paper-*.jar（旧版平铺结构迁移兼容）
     """
     import re
     base = Path(output_dir)
@@ -420,22 +421,34 @@ def _find_existing_jar(version: str, output_dir: str) -> Path | None:
         logger.warning("Invalid version string for JAR search: {}", version)
         return None
 
-    # 精确版本匹配
-    matches = list(base.glob(f"paper-{version}-*.jar"))
+    # 1. 精确版本匹配 — server/versions/{version}/
+    versions_dir = base / "versions" / version
+    matches = list(versions_dir.glob(f"paper-{version}-*.jar"))
     if matches:
         matches.sort(reverse=True)  # 取最新 build
+        logger.debug("Found JAR in versions/{}: {}", version, matches[0].name)
         return matches[0]
 
-    # 模糊匹配
-    matches = list(base.glob("paper-*.jar"))
-    if matches:
-        matches.sort(reverse=True)
-        return matches[0]
+    # 2. 回退 — 任意已安装版本（取最新 build）
+    all_versions = base / "versions"
+    if all_versions.exists():
+        matches = list(all_versions.glob("*/paper-*.jar"))
+        if matches:
+            matches.sort(reverse=True)
+            logger.debug("Found JAR in versions/*/: {}", matches[0].name)
+            return matches[0]
 
-    # 通用名
+    # 3. 通用名
     generic = base / "server.jar"
     if generic.exists():
         return generic
+
+    # 4. 旧版平铺结构兼容（迁移前遗留的 server/paper-*.jar）
+    matches = list(base.glob("paper-*.jar"))
+    if matches:
+        matches.sort(reverse=True)
+        logger.debug("Found JAR in legacy flat layout: {}", matches[0].name)
+        return matches[0]
 
     return None
 
@@ -465,14 +478,34 @@ def ensure_server_jar(
     Returns:
         可用的 JAR 文件 Path
     """
-    # 1. 用户指定路径
+    # 1. 用户指定路径 — 仅在版本匹配时使用，否则回退到自动查找/下载
     if server_jar_path:
         path = Path(server_jar_path)
         if path.exists():
-            logger.info(f"使用指定的服务端 JAR: {path}")
-            return path.resolve()
+            name = path.name
+            import re
+            # 检查是否为 PaperMC 标准命名 JAR (paper-{version}-{build}.jar)
+            paper_match = re.match(r"^paper-([\d.]+)-\d+\.jar$", name)
+            if paper_match:
+                jar_version = paper_match.group(1)
+                if jar_version == version:
+                    logger.info(f"使用指定的服务端 JAR: {path}")
+                    return path.resolve()
+                # 版本不匹配 — 配置中的 server_jar 已过期，忽略并回退
+                logger.warning(
+                    f"指定的服务端 JAR ({name}) 版本 {jar_version} "
+                    f"不匹配请求的版本 {version}，将查找/下载正确的版本"
+                )
+            else:
+                # 非标准命名（如自定义 JAR）— 视为用户手动指定，直接使用
+                logger.info(f"使用指定的服务端 JAR: {path}")
+                return path.resolve()
         else:
-            raise FileNotFoundError(f"指定的服务端 JAR 不存在: {path}")
+            # 路径不存在 — 记录警告并回退到自动查找/下载
+            logger.warning(
+                f"指定的服务端 JAR 不存在 ({server_jar_path})，"
+                f"将自动查找或下载版本 {version}"
+            )
 
     # 2. 检查是否已有该版本的 JAR
     existing = _find_existing_jar(version, output_dir)
@@ -498,8 +531,10 @@ def ensure_server_jar(
         f"({info['file_name']})"
     )
 
-    # 保存为版本命名文件，支持多版本共存
-    output_path = Path(output_dir) / info["file_name"]
+    # 保存到版本隔离目录，支持多版本共存
+    version_dir = Path(output_dir) / "versions" / version
+    version_dir.mkdir(parents=True, exist_ok=True)
+    output_path = version_dir / info["file_name"]
 
     def _progress(downloaded: int, total: int, _bps: int) -> None:
         _update_progress_state(info["version"], downloaded, total)
@@ -547,9 +582,11 @@ def _update_server_jar_link(source: Path, target: Path) -> None:
     """更新 server.jar 指向最新下载的 JAR。
 
     Windows 不支持 os.symlink 需要管理员权限，使用副本方式。
+    Linux/macOS 使用相对路径符号链接。
     """
     import shutil
     import sys
+    import os
 
     # 删除旧的链接/副本
     if target.exists() or target.is_symlink():
@@ -559,9 +596,10 @@ def _update_server_jar_link(source: Path, target: Path) -> None:
         # Windows：复制文件（硬链接需同分区，用副本最稳妥）
         shutil.copy2(source, target)
     else:
-        # Linux/macOS：创建符号链接
+        # Linux/macOS：创建相对路径符号链接
         try:
-            target.symlink_to(source.name)
+            rel_path = os.path.relpath(source, target.parent)
+            target.symlink_to(rel_path)
         except OSError:
             shutil.copy2(source, target)
 
