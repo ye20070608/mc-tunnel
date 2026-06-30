@@ -245,6 +245,40 @@ def create_admin_app(
 
 
 # ---------------------------------------------------------------------------
+# Cheroot production WSGI runner
+# ---------------------------------------------------------------------------
+
+def _run_cheroot(app: Flask, port: int, ssl_context, scheme: str, logger) -> None:
+    """Run the Flask app on a production-grade cheroot WSGI server.
+
+    Uses a bounded thread pool (``numthreads=8``) with socket timeouts
+    (``timeout=30``) to prevent the thread-exhaustion hangs that plague
+    Werkzeug's development server under long-running production loads.
+
+    SSL is handled natively via ``BuiltinSSLAdapter`` when *ssl_context*
+    is a ``(cert_path, key_path)`` tuple.
+    """
+    from cheroot.wsgi import Server as WSGIServer
+
+    bind_addr = ("127.0.0.1", port)
+    server = WSGIServer(bind_addr, app, numthreads=8, timeout=30)
+
+    if ssl_context is not None and scheme == "https":
+        from cheroot.ssl.builtin import BuiltinSSLAdapter
+
+        cert_path, key_path = ssl_context
+        server.ssl_adapter = BuiltinSSLAdapter(str(cert_path), str(key_path))
+        logger.info("Cheroot WSGI server with SSL on https://127.0.0.1:{}", port)
+    else:
+        logger.info("Cheroot WSGI server on http://127.0.0.1:{}", port)
+
+    try:
+        server.start()
+    except KeyboardInterrupt:
+        server.stop()
+
+
+# ---------------------------------------------------------------------------
 # Dual-port runner
 # ---------------------------------------------------------------------------
 
@@ -297,13 +331,7 @@ def run_server(
             scheme = "https"
 
     server_thread = threading.Thread(
-        target=lambda: app.run(
-            host="127.0.0.1",
-            port=admin_port,
-            debug=False,
-            use_reloader=False,
-            ssl_context=ssl_context,
-        ),
+        target=lambda: _run_cheroot(app, admin_port, ssl_context, scheme, logger),
         daemon=True,
         name="web-server",
     )
@@ -317,6 +345,3 @@ def run_server(
         logger.info("  - HTTPS enabled (self-signed certificate)")
     elif ssl_enabled:
         logger.info("  - HTTPS was requested but SSL setup failed; running HTTP")
-    logger.info(
-        "Production deployment: replace app.run() with waitress (Windows) or gunicorn (Linux)."
-    )
