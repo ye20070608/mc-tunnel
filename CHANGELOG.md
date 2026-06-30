@@ -1,10 +1,12 @@
 # Changelog
 
-## [Unreleased]
+## [v1.0.0] - 2026-06-30
 
 ### Added (2026-06-30)
 - **版本管理重构**：多版本共存 (`server/versions/{v}/` 目录隔离)，Web UI 下载/切换版本
 - **新建世界自定义种子**：前端弹窗输入种子，留空=随机
+- **cheroot WSGI 服务器**：替换 Werkzeug dev server，解决长时间运行后管理后台无响应问题（线程池 + 连接超时 + 原生 SSL）
+- **PyInstaller 打包**：`mc-tunnel.spec`，一键构建 `mc-tunnel.exe`（--onefile 模式）
 - **README.md 重写**：反映实际项目状态（单端口 Flask 架构）
 - **LICENSE**：MIT
 
@@ -15,9 +17,12 @@
 - **EULA 同步**：`versions/{v}/eula.txt` 自动拷贝到 `server/eula.txt`
 - **glob 模式兼容无 build 号**：同时匹配 `paper-{v}-{build}.jar` 和 `paper-{v}.jar`
 - **编码规范更新**：提交格式简化为 `type: 描述`，移除 `[TaskID]` 前缀
+- **RCON 连接超时**：`_rcon_command()` 增加 3 秒 socket timeout，防止 RCON 挂起阻塞 worker 线程
 - **user-guide.md 重写**：修正端口、架构、功能描述
 
 ### Fixed (2026-06-30)
+- **管理后台长时间运行后无响应**：Werkzeug dev server 线程耗尽 → 替换为 cheroot（线程池 `numthreads=8` + 连接超时 `timeout=30`）
+- **RCON 查询无超时**：mcipc Client 增加 `timeout=3.0`，防止 socket 永久阻塞
 - **版本切换 404**：`switch_version` glob 不匹配无 build 号 JAR 文件名
 - **下载错误版本**：`_find_existing_jar` 回退找到其他版本 JAR 导致跳过下载
 - **正则不匹配无 build 号**：`^paper-([\d.]+)-\d+\.jar$` → `^paper-([\d.]+)(?:-\d+)?\.jar$`
