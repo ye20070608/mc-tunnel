@@ -28,6 +28,7 @@ if !VENV_OK! EQU 0 (
         exit /b 1
     )
     echo [INFO] Installing dependencies...
+    set PYTHONUTF8=1
     venv\Scripts\python.exe -m pip install -r requirements.txt
     if !ERRORLEVEL! NEQ 0 (
         echo [ERROR] Failed to install dependencies
@@ -60,6 +61,7 @@ echo.
 
 echo [START] Launching MC Tunnel Controller...
 echo.
+set PYTHONUTF8=1
 venv\Scripts\python.exe main.py %*
 
 if %ERRORLEVEL% NEQ 0 (
