@@ -4,7 +4,7 @@ mc:
   max_players: 20
   java_path: D:\tools\Java23\bin\java.exe
   jvm_args: -Xmx4G -Xms2G
-  server_jar: D:\Visual Studio programs\MC服务器\server\versions\1.21.11\paper-1.21.11-69.jar
+  server_jar: server\versions\1.21.11\paper-1.21.11-69.jar
   auto_restart: true
   restart_max_retries: 3
 web:
