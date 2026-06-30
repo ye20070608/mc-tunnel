@@ -39,14 +39,14 @@ def detect_java(java_path: str = "") -> str:
     Raises:
         FileNotFoundError: 未找到 Java 安装
     """
-    # 1. 用户显式指定（config.yaml）
+    # 1. 用户显式指定（config.yaml）—— 优先使用，失效则降级到 PATH
     if java_path:
         p = Path(java_path)
         if p.exists():
-            logger.info(f"Java: {p}")
+            logger.info(f"Java (config): {p}")
             return str(p.resolve())
         else:
-            raise FileNotFoundError(f"配置的 java_path 不存在: {java_path}")
+            logger.warning(f"配置的 java_path 不存在: {java_path}，降级使用 PATH 查找")
 
     # 2. 系统 PATH
     java = shutil.which("java") or shutil.which("java.exe")
