@@ -247,6 +247,11 @@ def load_config(config_path: str | Path, bundle_dir: Path | None = None) -> Conf
             shutil.copy(_defaults, config_path)
             logger.info(f"首次运行，已创建配置文件: {config_path}")
             logger.info("请编辑此文件后重新运行程序")
+            # 控制台模式下 pause 防止窗口一闪而过
+            try:
+                input("按回车键退出...")
+            except (EOFError, KeyboardInterrupt):
+                print()
             sys.exit(0)
         else:
             logger.warning(f"默认配置模板不存在: {_defaults}")
