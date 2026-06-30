@@ -22,6 +22,14 @@ from loguru import logger
 # ---------------------------------------------------------------------------
 
 PAPER_API_BASE = "https://api.papermc.io/v2/projects/paper"
+# BMCLAPI2 国内镜像 — 加速 Mojang 原版 JAR 下载
+MOJANG_MANIFEST_MIRROR = "https://bmclapi2.bangbang93.com/mc/game/version_manifest.json"
+# 将 Mojang 官方 URL 映射到 BMCLAPI2 镜像
+_MOJANG_MIRROR_MAP = {
+    "https://launchermeta.mojang.com": "https://bmclapi2.bangbang93.com",
+    "https://piston-meta.mojang.com": "https://bmclapi2.bangbang93.com",
+    "https://launcher.mojang.com": "https://bmclapi2.bangbang93.com",
+}
 
 # ---------------------------------------------------------------------------
 # Thread-safe download progress state (for Web UI polling)
@@ -266,26 +274,42 @@ MOJANG_MANIFEST_URL = (
 # 注意：不再使用全局标志位，每次请求独立尝试 verify=True。
 
 
+def _rewrite_mojang_url(url: str) -> str:
+    """将 Mojang 官方 URL 重写为 BMCLAPI2 国内镜像。"""
+    for official, mirror in _MOJANG_MIRROR_MAP.items():
+        if url.startswith(official):
+            return url.replace(official, mirror)
+    return url
+
+
 def _mojang_request(url: str, stream: bool = False, timeout: int = 30) -> requests.Response:
     """Make a GET request to a Mojang API endpoint.
 
-    Tries ``verify=True`` first; falls back to ``verify=False`` with
-    ``urllib3`` warning suppressed if the SSL handshake fails.
-    Each request retries independently — one failure does not disable
-    verification for subsequent requests.
+    Automatically rewrites Mojang URLs to use the BMCLAPI2 mirror for
+    faster downloads from China.  Falls back to the official URL if the
+    mirror request fails.
     """
     import urllib3
 
-    try:
-        return requests.get(url, timeout=(15, 30), stream=stream)
-    except requests.exceptions.SSLError:
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        logger.warning(
-            "Mojang SSL 校验失败，回退到非校验模式（SHA1 完整性校验仍然有效）: {}",
-            url,
-        )
+    mirror_url = _rewrite_mojang_url(url)
+    urls_to_try = [mirror_url]
+    if mirror_url != url:
+        urls_to_try.append(url)
 
-    return requests.get(url, timeout=(15, 30), stream=stream, verify=False)
+    last_error = None
+    for u in urls_to_try:
+        try:
+            return requests.get(u, timeout=(15, 30), stream=stream)
+        except requests.exceptions.SSLError:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            try:
+                return requests.get(u, timeout=(15, 30), stream=stream, verify=False)
+            except Exception as e:
+                last_error = e
+        except Exception as e:
+            last_error = e
+
+    raise RuntimeError(f"Mojang 请求失败（所有源均不可用）: {last_error}")
 
 
 def _get_mojang_server_info(version: str) -> dict[str, Any]:
