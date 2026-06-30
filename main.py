@@ -45,6 +45,7 @@ from core.mcserver.downloader import (
     switch_version,
     list_stable_versions,
     _find_existing_jar,
+    cleanup_paper_configs_on_switch,
 )
 from core.mcserver.eula import check_eula, prompt_eula, write_eula
 
@@ -267,6 +268,9 @@ def main() -> None:
     except Exception as e:
         logger.error(f"无法获取 MC 服务端 JAR: {e}")
         sys.exit(1)
+
+    # 版本切换时清理旧 Paper 配置，避免格式不兼容
+    cleanup_paper_configs_on_switch(target_version, output_dir)
 
     # ── 6. EULA 确认 ──────────────────────────────────────────
     server_dir = jar_path.parent

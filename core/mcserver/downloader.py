@@ -657,6 +657,63 @@ def _update_server_jar_link(source: Path, target: Path) -> None:
     logger.debug(f"server.jar → {source.name}")
 
 
+def cleanup_paper_configs_on_switch(
+    target_version: str,
+    output_dir: str = ".",
+) -> bool:
+    """版本切换时清理旧 Paper 配置，避免新老版本格式不兼容。
+
+    Paper 不同大版本的配置格式可能不同（如 1.21 引入了 "default"
+    作为数值字段的合法值，但 1.20 不认识），主动删除让服务端重生。
+
+    Args:
+        target_version: 目标版本号（如 "1.20.1"）
+        output_dir: 服务端根目录
+
+    Returns:
+        True 如果执行了清理
+    """
+    version_marker = Path(output_dir) / "config" / ".paper_version"
+    target_major = target_version.split(".")[:2]  # e.g. ["1", "20"]
+
+    # Read last-run version
+    last_major = None
+    if version_marker.exists():
+        try:
+            last_raw = version_marker.read_text(encoding="utf-8").strip()
+            last_major = last_raw.split(".")[:2]
+        except Exception:
+            pass
+
+    if last_major == target_major:
+        return False
+
+    # Version changed — remove stale config files so they regenerate
+    config_dir = Path(output_dir) / "config"
+    stale_files = [
+        config_dir / "paper-world-defaults.yml",
+        config_dir / "paper-global.yml",
+    ]
+    cleaned = False
+    for f in stale_files:
+        if f.exists():
+            try:
+                f.unlink()
+                logger.info(f"已清理旧版配置: {f}")
+                cleaned = True
+            except OSError as exc:
+                logger.warning(f"无法删除旧配置 {f}: {exc}")
+
+    # Write new version marker
+    config_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        version_marker.write_text(target_version, encoding="utf-8")
+    except OSError:
+        pass
+
+    return cleaned
+
+
 def switch_version(
     version: str,
     output_dir: str = ".",
@@ -676,6 +733,7 @@ def switch_version(
         新版本 JAR 文件 Path
     """
     logger.info(f"切换 MC 版本: → {version}")
+    cleanup_paper_configs_on_switch(version, output_dir)
     jar_path = ensure_server_jar(
         version=version,
         server_jar_path="",
