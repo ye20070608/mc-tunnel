@@ -617,12 +617,13 @@ def ensure_server_jar(
     info = get_download_info(version, build)
 
     # 后台预下载 Mojang 原版 JAR（BMCLAPI2 镜像加速）
-    # 不是启动必需的，但 Paperclip 后续运行时能跳过 Mojang 下载
-    threading.Thread(
+    # PaperMC API 国内经常不可达，Mojang 下载作为 fallback
+    _mojang_thread = threading.Thread(
         target=_ensure_mojang_jar,
         args=(version, output_dir, show_progress),
         daemon=True,
-    ).start()
+    )
+    _mojang_thread.start()
 
     logger.info(
         f"准备下载 PaperMC {info['version']} build #{info['build']} "
@@ -668,6 +669,25 @@ def ensure_server_jar(
         _mark_progress_error()
         logger.error(str(e))
         raise
+    except Exception as e:
+        # PaperMC API 不可达（国内常见）→ 等 Mojang 镜像下载完成作为 fallback
+        logger.warning("PaperMC 下载失败: {}", e)
+        logger.info("等待 Mojang 镜像下载完成（BMCLAPI2）...")
+        _mojang_thread.join(timeout=300)  # 最多等 5 分钟
+
+        mojang_jar = version_dir / f"mojang_{version}.jar"
+        if mojang_jar.exists():
+            logger.info("使用 Mojang 原版服务端（BMCLAPI2 镜像下载）")
+            _update_server_jar_link(mojang_jar, Path(output_dir) / "server.jar")
+            _clear_progress_state()
+            _mark_progress_done()
+            return mojang_jar.resolve()
+        else:
+            _mark_progress_error()
+            logger.error("Mojang 镜像下载也未完成，无法启动")
+            raise RuntimeError(
+                "PaperMC 和 Mojang 下载均失败，请检查网络后重试"
+            )
 
     _mark_progress_done()
     return output_path.resolve()
