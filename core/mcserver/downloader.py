@@ -403,6 +403,8 @@ def _ensure_mojang_jar(
 
     version_dir.mkdir(parents=True, exist_ok=True)
 
+    _mojang_last_pct = [-5]
+
     def _mojang_progress(downloaded: int, total: int, _bps: int) -> None:
         _update_progress_state(version, downloaded, total, phase="mojang_jar")
         if not show_progress or total == 0:
@@ -410,11 +412,12 @@ def _ensure_mojang_jar(
         pct = downloaded / total * 100
         downloaded_mb = downloaded / (1024 * 1024)
         total_mb = total / (1024 * 1024)
-        print(
-            f"\r  [>>] Minecraft {version} ... {downloaded_mb:.1f}/{total_mb:.1f} MB ({pct:.0f}%)   ",
-            end="",
-            flush=True,
-        )
+        if pct - _mojang_last_pct[0] >= 10 or downloaded >= total:
+            _mojang_last_pct[0] = pct
+            logger.info(
+                "  [>>] Mojang {} ... {:.1f}/{:.1f} MB ({:.0f}%)",
+                version, downloaded_mb, total_mb, pct,
+            )
 
     try:
         download_jar(
@@ -597,7 +600,12 @@ def ensure_server_jar(
             _mark_progress_done()
             return existing.resolve()
 
-    # 3. 从 PaperMC 下载
+    # 3. 先从镜像预下载 Mojang 原版 JAR（Paperclip 启动时需要）
+    #    走 BMCLAPI2 国内 CDN，快；提前下载好，Paperclip 启动就跳过下载
+    logger.info(f"Mojang {version} — 预下载原版服务端（BMCLAPI2 镜像）...")
+    _ensure_mojang_jar(version, output_dir, show_progress)
+
+    # 4. 从 PaperMC API 下载 Paperclip JAR
     logger.info(f"PaperMC {version} — 获取最新构建信息...")
     build = get_latest_build(version)
     info = get_download_info(version, build)
@@ -646,13 +654,6 @@ def ensure_server_jar(
         _mark_progress_error()
         logger.error(str(e))
         raise
-
-    # 预下载 Mojang 原版 JAR 到 cache/（后台线程，不阻塞主启动流程）
-    threading.Thread(
-        target=_ensure_mojang_jar,
-        args=(version, output_dir, show_progress),
-        daemon=True,
-    ).start()
 
     _mark_progress_done()
     return output_path.resolve()
