@@ -6,8 +6,20 @@ setlocal enabledelayedexpansion
 
 cd /d "%~dp0.."
 
-if not exist "venv\Scripts\python.exe" (
-    echo [INFO] Python virtual environment not found, creating...
+set VENV_OK=0
+if exist "venv\Scripts\python.exe" (
+    venv\Scripts\python.exe --version >nul 2>&1
+    if !ERRORLEVEL! EQU 0 set VENV_OK=1
+)
+
+if !VENV_OK! EQU 0 (
+    if exist "venv\Scripts\python.exe" (
+        echo [WARN] Virtual environment is broken ^(base Python moved or removed^)
+        echo [INFO] Removing old venv and recreating...
+        rmdir /s /q venv
+    ) else (
+        echo [INFO] Python virtual environment not found, creating...
+    )
     where py >nul 2>nul && (py -3 -m venv venv) || (python -m venv venv)
     if !ERRORLEVEL! NEQ 0 (
         echo [ERROR] Failed to create virtual environment

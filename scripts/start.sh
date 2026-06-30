@@ -9,9 +9,19 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_DIR"
 
-# 检查虚拟环境
-if [ ! -f "venv/bin/python" ]; then
-    echo "[信息] 未找到 Python 虚拟环境，正在创建..."
+# 检查虚拟环境（不仅要存在，还要能正常运行）
+VENV_OK=0
+if [ -f "venv/bin/python" ]; then
+    venv/bin/python --version >/dev/null 2>&1 && VENV_OK=1
+fi
+
+if [ $VENV_OK -eq 0 ]; then
+    if [ -f "venv/bin/python" ]; then
+        echo "[警告] 虚拟环境已损坏（原始 Python 可能被移动/卸载），正在重建..."
+        rm -rf venv
+    else
+        echo "[信息] 未找到 Python 虚拟环境，正在创建..."
+    fi
     python3 -m venv venv
     if [ $? -ne 0 ]; then
         echo "[错误] 创建虚拟环境失败，请确保 Python 3 已安装"
