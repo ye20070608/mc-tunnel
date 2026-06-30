@@ -8,27 +8,25 @@ cd /d "%~dp0.."
 
 set NEED_DEPS=0
 
-rem -- 1. Check if venv python works --
+rem -- 1. Check if venv is healthy --
 if exist "venv\Scripts\python.exe" (
     venv\Scripts\python.exe --version >nul 2>&1
     if !ERRORLEVEL! EQU 0 (
-        rem Venv python works -- check if dependencies are installed
+        rem Venv works -- verify dependencies are installed
         set PYTHONUTF8=1
         venv\Scripts\python.exe -c "import loguru" >nul 2>&1
         if !ERRORLEVEL! NEQ 0 set NEED_DEPS=1
     ) else (
         echo [WARN] Virtual environment is broken (base Python moved or removed)
-        echo [INFO] Removing old venv and recreating...
-        rmdir /s /q venv
-        set NEED_DEPS=1
-        call :do_create_venv
+        call :do_rebuild_venv
         if !ERRORLEVEL! NEQ 0 exit /b 1
+        set NEED_DEPS=1
     )
 ) else (
     echo [INFO] Python virtual environment not found, creating...
-    set NEED_DEPS=1
     call :do_create_venv
     if !ERRORLEVEL! NEQ 0 exit /b 1
+    set NEED_DEPS=1
 )
 
 rem -- 2. Install dependencies if needed --
@@ -81,12 +79,61 @@ if %ERRORLEVEL% NEQ 0 (
 pause
 exit /b
 
-rem -- Helper: create virtual environment --
-:do_create_venv
-    where py >nul 2>nul && (py -3 -m venv venv) || (python -m venv venv)
+
+rem ================================================================
+rem  Helpers
+rem ================================================================
+
+rem -- Find system Python, remove old venv, create new one --
+:do_rebuild_venv
+    rem Step 1: Find a working Python BEFORE deleting anything
+    call :find_system_python SYS_PY
+    if "!SYS_PY!"=="" exit /b 1
+
+    rem Step 2: Now it's safe to remove the broken venv
+    echo [INFO] Removing old venv...
+    rmdir /s /q venv
+
+    rem Step 3: Create new venv
+    !SYS_PY! -m venv venv
     if !ERRORLEVEL! NEQ 0 (
         echo [ERROR] Failed to create virtual environment
-        echo Make sure Python is installed and added to PATH
         exit /b 1
     )
     exit /b 0
+
+rem -- Create a fresh venv (no old one to remove) --
+:do_create_venv
+    call :find_system_python SYS_PY
+    if "!SYS_PY!"=="" exit /b 1
+
+    !SYS_PY! -m venv venv
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to create virtual environment
+        exit /b 1
+    )
+    exit /b 0
+
+rem -- Find an available Python on the system --
+rem    Returns the result in the variable named by %1
+:find_system_python
+    where py >nul 2>nul
+    if !ERRORLEVEL! EQU 0 (
+        set "%~1=py -3"
+        exit /b 0
+    )
+    where python >nul 2>nul
+    if !ERRORLEVEL! EQU 0 (
+        set "%~1=python"
+        exit /b 0
+    )
+    where python3 >nul 2>nul
+    if !ERRORLEVEL! EQU 0 (
+        set "%~1=python3"
+        exit /b 0
+    )
+    echo [ERROR] Python not found on system PATH
+    echo Install Python 3 from https://www.python.org/downloads/
+    echo Make sure to check "Add Python to PATH" during installation
+    set "%~1="
+    exit /b 1
