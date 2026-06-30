@@ -26,9 +26,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
-## 当前状态：阶段 1-5 完成，阶段 6 进行中（Bug 修复与功能增强）
+## 当前状态：阶段 1-6 完成，阶段 7 待完成（文档完善、打包发布）
 
-**46 个 Python 源文件** 覆盖阶段 1-5 全部功能：
+**43 个 Python 源文件** 覆盖阶段 1-6 全部功能：
 
 | 阶段 | 状态 | 内容 |
 |------|------|------|
@@ -37,10 +37,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 阶段 3 | ✅ 完成 | frp 配置生成器、frp 进程管理、TCP 代理层（协议嗅探）、UDP 预留、连接统计 |
 | 阶段 4 | ✅ 完成 | Flask 单端口 HTTP 服务器（8443）、状态 API、介绍页模板 |
 | 阶段 5 | ✅ 完成 | JWT 认证、CSRF 防护、管理后台全功能（服务控制/白名单/日志/穿透配置/插件管理/审计） |
-| 阶段 6 | 🔧 进行中 | 整合测试、Bug 修复、功能增强 |
+| 阶段 6 | ✅ 完成 | 整合测试、18 项安全加固、多版本共存重构、Bug 修复 |
 | 阶段 7 | ○ 待完成 | 文档完善、打包发布、CI/CD |
 
-当前焦点：Bug 修复（隧道冲突、中文乱码、玩家管理增强）、文档更新。
+当前焦点：阶段 7 文档与打包。
+
+### 多版本共存（v2.0 核心特性）
+
+PaperMC 服务端按版本隔离存储：`server/versions/{version}/`。`downloader.py` 的 `switch_version()` 切换版本时自动清理旧 Paper 配置（`paper-world-defaults.yml` 等），避免跨版本格式不兼容崩溃。`_find_jar()` 返回绝对路径，防止 Java cwd 与项目根不同导致路径双重嵌套。
 
 ### 首次运行行为
 
@@ -48,31 +52,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 首次运行时若管理员密码为空，自动设置默认密码 `admin/admin`（BCrypt 加密），登录后应修改
 - 首次运行时交互式选择 PaperMC 版本（从 API 拉取列表），可用 `--version` 跳过
 
-### 阶段 6 已修复
+### 阶段 6 安全加固摘要
 
-| 问题 | 修复文件 | 说明 |
-|------|---------|------|
-| 中文控制台乱码 | `adapter.py:39-41` | JVM 加 `-Dsun.stdout.encoding=UTF-8` 等三个编码参数 |
-| RCON 日志刷屏 | `procman/manager.py:13-19` | `_is_internal_line()` 过滤 RCON 连接/断开噪音 |
-| 隧道状态误报 | `client.py:get_status()` | 用 `_connected_event` 区分连接中/已连接/断开 |
-| frpc 输出重复 | `client.py:116` | `stderr=subprocess.STDOUT` 合并管道，解决樱花 frpc 同时写 stdout+stderr |
-| frpc 重复启动 | `app.js:949` + `api/tunnel.py:48` | 前端 `_frpcActionLock` 互斥锁 + 后端去竞态 |
-| OP 管理 | `adapter.py:op_player/deop` + `api/mc.py:deop` | 绿色按钮支持设置/撤销管理员 |
-| 玩家详情 | `adapter.py:_enrich_player` | RCON 获取世界+坐标+游戏模式，控制台追踪在线时长 |
-| 白名单最后在线 | `whitelist.py:record_last_online` | 玩家退出时记录时间戳，锁保护防 TOCTOU 竞态 |
-| 樱花启动器冲突 | 文档警告 | `SakuraFrpService.exe` 与我们的 frpc 不能同时运行 |
-| 世界名路径穿越 | `worlds.py` + `api/server.py` | `validate_world_name()` 拒绝 `../`、`/`、`\`（#1 高危） |
-| 日志导出 symlink 穿越 | `logs_api.py` | `is_symlink()` 跳过 + `resolve()` 路径验证（#2 高危） |
-| glob 注入 | `adapter.py` + `downloader.py` | 版本号正则 `^[\d.]+$` 校验后入 glob（#4 高危） |
-| SSL 全局回退 | `downloader.py` | 删除 `_MOJANG_SSL_OK` 全局变量，每次请求独立验证（#5 高危） |
-| 世界迁移跳过列表 | `worlds.py` | 拒绝隐藏目录，要求 `level.dat`（#3 高危） |
-| 配置/密码原子写入 | `loader.py` + `admin.py` | `tempfile.mkstemp` + `os.replace` 防文件损坏（#7/8 中危） |
-| server.properties 原子写 | `worlds.py` + `api/server.py` | 三处 server.properties 写入均原子化（#9/13/15 中危） |
-| Java 路径跨平台 | `java.py` | `%ProgramFiles%` / `%ProgramW6432%` 替代硬编码（#10 中危） |
-| 玩家名输入校验 | `api/mc.py` | kick/op/deop 端点添加 `_validate_player_name()`（#11 中危） |
-| 审计日志导出限制 | `audit/logger.py` | 限制到 `logs/exports/` 目录（#12 中危） |
-| 工作目录依赖 | `main.py` | 启动时 `os.chdir(PROJECT_ROOT)`（#14 低危） |
-| Path 类型一致 | `loader.py` | ConfigManager 统一存储 `Path` 对象（#16 低危） |
+18 项安全修复已完成（详见 `CHANGELOG.md` Security 条目），关键模式：
+
+- **路径穿越防护**：世界名 `validate_world_name()` 拒绝 `../`、`/`、`\`；日志导出 `is_symlink()` 跳过 + `resolve()` 验证
+- **注入防护**：版本号正则 `^[\d.]+$` 校验后入 glob；玩家名限 1-16 字符字母数字下划线
+- **原子写入**：所有配置/server.properties 写入使用 `tempfile.mkstemp` + `os.replace`
+- **竞态修复**：frpc 启动前后端双重互斥锁；白名单写入全读写锁保护
+- **编码修复**：JVM 加 `-Dsun.stdout.encoding=UTF-8`；frpc stderr 合并到 stdout 单管道
 
 ### ⚠️ 樱花穿透冲突警告
 
@@ -179,7 +167,7 @@ venv\Scripts\python main.py --version 1.21  # 跳过交互式版本选择
 
 # 测试
 pytest tests/ --cov                          # 全部测试 + 覆盖率
-python tests/test_web_api.py                 # 集成测试（51+ 项 check，standalone 脚本 + mock 依赖）
+python tests/test_web_api.py                 # 集成测试（83 项 check，standalone 脚本 + mock 依赖）
 pytest tests/test_web_api.py::test_login_success -v  # 运行单个测试
 
 # 代码质量
@@ -240,8 +228,8 @@ MC服务器/
 │   │   ├── worlds.py              # ✓ 世界管理（worlds/ 目录 + 三维度分组 + 迁移）
 │   │   ├── properties.py          # ✓ server.properties 生成器（从 WorldConfig）
 │   │   ├── plugins.py             # ✓ 插件管理（上传/删除/启用禁用 + zip 炸弹防护）
-│   │   ├── downloader.py          # ✓ PaperMC API 下载（含 SHA256 校验）
-│   │   ├── java.py                # ✓ Java 检测与版本校验（4 级查找策略）
+│   │   ├── downloader.py          # ✓ PaperMC 下载/版本切换/多版本共存（含 SHA256 校验）
+│   │   ├── java.py                # ✓ Java 检测与版本校验（config 指定 → PATH 查找）
 │   │   └── eula.py                # ✓ Mojang EULA 确认
 │   ├── procman/
 │   │   └── manager.py             # ✓ 通用进程管理器（启停/重启/崩溃自动重试/健康检查）
@@ -280,7 +268,7 @@ MC服务器/
 │       ├── style.css              # ✓ 像素传奇设计系统（CSS 变量/Dark 主题）
 │       └── app.js                 # ✓ 前端 JS（API 客户端/轮询器/CSRF/标签切换/服务器操作）
 ├── tests/
-│   └── test_web_api.py            # ✓ 集成测试（51+ 项 check：认证/CSRF/API/白名单/日志/隧道/插件/边界，standalone 脚本 + mock 依赖）
+│   └── test_web_api.py            # ✓ 集成测试（83 项 check：认证/CSRF/API/白名单/日志/隧道/插件/边界，standalone 脚本 + mock 依赖）
 ├── docs/
 │   ├── DECISIONS.md               # ✓ 技术选型（10 项决策）
 │   ├── user-guide.md              # ✓ 用户手册（10 章/567 行）
@@ -293,3 +281,37 @@ MC服务器/
     ├── start.bat                  # ✓ Windows 启动（自动创建 venv + 安装依赖）
     └── start.sh                   # ✓ Linux/macOS 启动（同上）
 ```
+
+### 运行时目录结构（`server/`）
+
+多版本共存，`server/versions/{version}/` 隔离各版本的 JAR 和配置：
+
+```
+server/
+├── versions/                      # 多版本隔离目录
+│   ├── 1.21/
+│   │   ├── paper-1.21-130.jar     # Mojang 原版 JAR（Paperclip 输入）
+│   │   ├── paper-1.21-130(1).jar  # Paperclip 补丁产物（实际运行）
+│   │   ├── eula.txt               # 每版本独立的 EULA
+│   │   └── cache/                 # Mojang 编译缓存（Paperclip 产出）
+│   └── 1.20.4/
+│       └── ...
+├── worlds/                        # 世界存档（按组分组）
+│   └── <group_name>/
+│       ├── world/                 # 主世界
+│       ├── world_nether/          # 地狱
+│       └── world_the_end/         # 末地
+├── plugins/                       # PaperMC 插件
+├── server.properties              # 当前生效的服务器配置
+└── eula.txt                       # 当前版本的 EULA 副本
+```
+
+`downloader.py` 的 `_find_existing_jar()` 先查 `versions/{v}/`，再 fallback 到旧版平铺结构 `server/paper-*.jar`。`switch_version()` 切换版本时自动调用 `cleanup_paper_configs_on_switch()` 清除 `paper-world-defaults.yml`、`bukkit.yml`、`spigot.yml`、`commands.yml`、`help.yml` 等跨版本不兼容的配置文件。
+
+### 启动脚本注意事项
+
+`start.bat` 使用 `goto` 扁平化流程，核心逻辑：
+- 先检测系统 Python（`where python`），不满足才用 `%LOCALAPPDATA%\...\Python\Launcher\py.exe`
+- 检测 venv 是否有效（`python.exe` 存在 + 能 `import loguru`），**能用就绝不删除重建**
+- `PYTHONUTF8=1` 解决 pip 在 GBK 系统上的解码报错
+- 全部 ASCII 编码，避免 cmd.exe 解析 UTF-8 特殊字符报错
