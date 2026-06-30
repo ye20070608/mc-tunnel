@@ -35,7 +35,7 @@ rem ── 2. Install dependencies if needed ───────────�
 if !NEED_DEPS! EQU 1 (
     echo [INFO] Installing dependencies...
     set PYTHONUTF8=1
-    venv\Scripts\python.exe -m pip install -r requirements.txt
+    venv\Scripts\python.exe -m pip install --progress-bar on -r requirements.txt
     if !ERRORLEVEL! NEQ 0 (
         echo [ERROR] Failed to install dependencies
         pause
