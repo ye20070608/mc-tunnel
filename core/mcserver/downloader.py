@@ -600,15 +600,18 @@ def ensure_server_jar(
             _mark_progress_done()
             return existing.resolve()
 
-    # 3. 先从镜像预下载 Mojang 原版 JAR（Paperclip 启动时需要）
-    #    走 BMCLAPI2 国内 CDN，快；提前下载好，Paperclip 启动就跳过下载
-    logger.info(f"Mojang {version} — 预下载原版服务端（BMCLAPI2 镜像）...")
-    _ensure_mojang_jar(version, output_dir, show_progress)
-
-    # 4. 从 PaperMC API 下载 Paperclip JAR
+    # 3. 从 PaperMC API 下载 Paperclip JAR（必需的，直接启动用）
     logger.info(f"PaperMC {version} — 获取最新构建信息...")
     build = get_latest_build(version)
     info = get_download_info(version, build)
+
+    # 后台预下载 Mojang 原版 JAR（BMCLAPI2 镜像加速）
+    # 不是启动必需的，但 Paperclip 后续运行时能跳过 Mojang 下载
+    threading.Thread(
+        target=_ensure_mojang_jar,
+        args=(version, output_dir, show_progress),
+        daemon=True,
+    ).start()
 
     logger.info(
         f"准备下载 PaperMC {info['version']} build #{info['build']} "
