@@ -89,11 +89,24 @@ def _mark_progress_error() -> None:
 
 
 def _http_get(endpoint: str) -> dict | list:
-    """发送 GET 请求到 PaperMC API，返回 JSON 数据。"""
+    """发送 GET 请求到 PaperMC API，返回 JSON 数据。
+
+    国内访问 api.papermc.io 可能极慢，先尝试跳过 SSL 验证的连接。
+    """
+    import urllib3
+
     url = f"{PAPER_API_BASE}/{endpoint.lstrip('/')}"
-    resp = requests.get(url, timeout=(15, 30))
-    resp.raise_for_status()
-    return resp.json()
+    last_error = None
+    for verify_ssl in (False, True):  # 优先跳过 SSL（国内 CDN 证书链问题）
+        try:
+            if not verify_ssl:
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            resp = requests.get(url, timeout=(10, 25), verify=verify_ssl)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            last_error = e
+    raise RuntimeError(f"PaperMC API 请求失败: {last_error}")
 
 
 def _version_key(version: str) -> tuple[int, ...]:
@@ -201,15 +214,13 @@ def download_jar(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        # timeout=(connect, read): 30s connect + 60s between chunks
-        resp = requests.get(download_url, stream=True, timeout=(30, 60), verify=verify)
-    except requests.exceptions.SSLError:
-        if not verify:
-            raise
+        # timeout=(connect, read): 15s connect + 60s between chunks
+        resp = requests.get(download_url, stream=True, timeout=(15, 60), verify=verify)
+    except (requests.exceptions.SSLError, requests.exceptions.ConnectionError):
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        logger.warning("SSL 校验失败，回退到非校验模式: {}", download_url)
-        resp = requests.get(download_url, stream=True, timeout=(30, 60), verify=False)
+        logger.warning("SSL/连接失败，回退到非校验模式重试: {}", download_url[:80])
+        resp = requests.get(download_url, stream=True, timeout=(15, 60), verify=False)
     resp.raise_for_status()
 
     total = int(resp.headers.get("content-length", 0))
@@ -632,7 +643,6 @@ def ensure_server_jar(
         pct = downloaded / total * 100
         downloaded_mb = downloaded / (1024 * 1024)
         total_mb = total / (1024 * 1024)
-        # Log every 5% step (PyInstaller console may not render \r correctly)
         if pct - _progress_last_logged_pct[0] >= 5 or downloaded >= total:
             _progress_last_logged_pct[0] = pct
             logger.info(
@@ -640,6 +650,7 @@ def ensure_server_jar(
                 info["version"], downloaded_mb, total_mb, pct,
             )
 
+    logger.info("  正在连接 {} ...", info["download_url"][:60])
     try:
         download_jar(
             download_url=info["download_url"],
