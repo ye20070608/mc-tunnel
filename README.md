@@ -110,6 +110,7 @@ mc-tunnel/
 | Auth | JWT + BCrypt + CSRF |
 | MC Protocol | RCON (mcipc) + Server List Ping (mcstatus) |
 | Tunneling | frp subprocess |
+| WSGI Server | cheroot 11.x (thread pool + SSL + timeout) |
 | Testing | pytest |
 
 ## Development

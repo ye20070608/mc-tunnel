@@ -91,7 +91,7 @@ web/
 
 - MC 服务端、frp 子进程使用 `asyncio.subprocess` 或 `subprocess.Popen` + 线程监控
 - TCP 代理层使用 `asyncio` 实现，避免阻塞
-- Flask 开发服务器仅限开发；生产使用 `waitress`（Windows）或 `gunicorn`（Linux）
+- Flask 开发服务器仅限开发；生产使用 `cheroot`（Windows）或 `gunicorn`（Linux），cheroot 提供有界线程池 + 连接超时 + 原生 SSL
 - 共享状态使用 `threading.Lock` 保护
 
 ### 2.5 日志规范

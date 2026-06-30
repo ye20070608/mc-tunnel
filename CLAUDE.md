@@ -80,6 +80,7 @@ PaperMC 服务端按版本隔离存储：`server/versions/{version}/`。`downloa
 | 认证 | JWT（PyJWT）+ BCrypt ≥ 12 |
 | MC 交互 | RCON（mcipc）+ Server List Ping（mcstatus） |
 | 穿透 | frp 子进程 |
+| WSGI 服务器 | cheroot 11.x（线程池 + SSL + 超时） |
 | 打包 | PyInstaller（--onefile） |
 | 测试 | pytest + pytest-cov |
 
