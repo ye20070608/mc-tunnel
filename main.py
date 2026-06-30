@@ -24,10 +24,19 @@ import os
 import sys
 from pathlib import Path
 
-# Ensure the working directory is the project root (where this file lives).
-# This makes all relative paths (logs/, config/, server.properties, etc.)
-# work correctly regardless of where the user launched the process from.
-_PROJECT_ROOT = Path(__file__).resolve().parent
+# Separate the concept of "project root" (working directory, where writable
+# runtime state lives — logs, config, server files) from "bundle directory"
+# (where read-only packaged resources live — templates, static, defaults).
+# In development mode they are the same.  Under PyInstaller --onefile the
+# bundle is a temporary extraction directory (sys._MEIPASS) while the project
+# root is the directory that contains the .exe (sys.executable parent).
+if getattr(sys, 'frozen', False):
+    _PROJECT_ROOT = Path(sys.executable).resolve().parent
+    _BUNDLE_DIR = Path(sys._MEIPASS)
+else:
+    _PROJECT_ROOT = Path(__file__).resolve().parent
+    _BUNDLE_DIR = _PROJECT_ROOT
+
 os.chdir(str(_PROJECT_ROOT))
 
 # 确保终端输出使用 UTF-8（Windows 中文系统需 chcp 65001 配合）
@@ -187,7 +196,7 @@ def main() -> None:
 
     # ── 2. 加载配置 ───────────────────────────────────────────
     # load_config 首次运行时会创建配置文件并退出
-    cfg = load_config("config/config.yaml")
+    cfg = load_config("config/config.yaml", bundle_dir=_BUNDLE_DIR)
 
     # ── 2.5 首次运行：设置默认管理员密码 ──────────────────────
     _needs_init = all(
@@ -388,7 +397,7 @@ def main() -> None:
     logger.info("─" * 50)
     logger.info("启动 Web 服务...")
 
-    run_server(config_dict, logger, mc_adapter, tunnel_manager, audit_logger, config_manager)
+    run_server(config_dict, logger, mc_adapter, tunnel_manager, audit_logger, config_manager, bundle_dir=_BUNDLE_DIR)
 
     scheme = "https" if cfg.web.ssl_enabled else "http"
     logger.info(f"管理后台: {scheme}://127.0.0.1:{cfg.web.admin_port}/dashboard")
