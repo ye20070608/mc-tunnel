@@ -22,6 +22,11 @@ from loguru import logger
 # ---------------------------------------------------------------------------
 
 PAPER_API_BASE = "https://api.papermc.io/v2/projects/paper"
+# BMCLAPI2 国内镜像（优先使用，失败时回退官方 API）
+PAPER_API_MIRROR = "https://bmclapi2.bangbang93.com/papermc/v2/projects/paper"
+
+# 当前使用的 API 基地址（下载失败时自动切换）
+_current_api_base = PAPER_API_MIRROR  # 国内优先
 
 # ---------------------------------------------------------------------------
 # Thread-safe download progress state (for Web UI polling)
@@ -81,11 +86,34 @@ def _mark_progress_error() -> None:
 
 
 def _http_get(endpoint: str) -> dict | list:
-    """发送 GET 请求到 PaperMC API，返回 JSON 数据。"""
-    url = f"{PAPER_API_BASE}/{endpoint.lstrip('/')}"
-    resp = requests.get(url, timeout=(15, 30))
-    resp.raise_for_status()
-    return resp.json()
+    """发送 GET 请求到 PaperMC API，返回 JSON 数据。
+
+    优先使用国内镜像（BMCLAPI2），失败时自动回退官方 API。
+    """
+    global _current_api_base
+
+    bases = [_current_api_base]
+    if _current_api_base != PAPER_API_BASE:
+        bases.append(PAPER_API_BASE)  # fallback to official
+    if _current_api_base != PAPER_API_MIRROR:
+        bases.append(PAPER_API_MIRROR)  # fallback to mirror
+
+    last_error = None
+    for base in bases:
+        url = f"{base}/{endpoint.lstrip('/')}"
+        try:
+            resp = requests.get(url, timeout=(10, 20))
+            resp.raise_for_status()
+            # 成功后记住这个可用的 base
+            if base != _current_api_base:
+                logger.info(f"PaperMC API 切换到: {base}")
+                _current_api_base = base
+            return resp.json()
+        except Exception as e:
+            last_error = e
+            logger.debug(f"PaperMC API 请求失败 ({base}): {e}")
+
+    raise RuntimeError(f"PaperMC API 请求失败（所有源均不可用）: {last_error}")
 
 
 def _version_key(version: str) -> tuple[int, ...]:
@@ -156,7 +184,7 @@ def get_download_info(version: str, build: int) -> dict:
     sha256: str = application.get("sha256", "")
 
     download_url = (
-        f"{PAPER_API_BASE}/versions/{version}/builds/{build}"
+        f"{_current_api_base}/versions/{version}/builds/{build}"
         f"/downloads/{file_name}"
     )
 
@@ -588,6 +616,8 @@ def ensure_server_jar(
     version_dir.mkdir(parents=True, exist_ok=True)
     output_path = version_dir / info["file_name"]
 
+    _progress_last_logged_pct = [0]  # mutable closure: last logged 10%-step
+
     def _progress(downloaded: int, total: int, _bps: int) -> None:
         _update_progress_state(info["version"], downloaded, total)
         if not show_progress or total == 0:
@@ -595,11 +625,21 @@ def ensure_server_jar(
         pct = downloaded / total * 100
         downloaded_mb = downloaded / (1024 * 1024)
         total_mb = total / (1024 * 1024)
-        print(
-            f"\r  [>>] PaperMC {info['version']} ... {downloaded_mb:.1f}/{total_mb:.1f} MB ({pct:.0f}%)   ",
-            end="",
-            flush=True,
-        )
+        # Log every 10% step as a visible line (PyInstaller console may not
+        # render \r progress bars correctly), plus an in-place update between.
+        if pct - _progress_last_logged_pct[0] >= 10 or downloaded >= total:
+            _progress_last_logged_pct[0] = pct - (pct % 10)
+            logger.info(
+                "下载 PaperMC {} ... {:.0f}/{:.0f} MB ({:.0f}%)",
+                info["version"], downloaded_mb, total_mb, pct,
+            )
+        else:
+            # In-place progress for dev mode
+            print(
+                f"\r  [>>] PaperMC {info['version']} ... {downloaded_mb:.1f}/{total_mb:.1f} MB ({pct:.0f}%)   ",
+                end="",
+                flush=True,
+            )
 
     try:
         download_jar(
