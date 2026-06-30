@@ -83,7 +83,7 @@ def _mark_progress_error() -> None:
 def _http_get(endpoint: str) -> dict | list:
     """发送 GET 请求到 PaperMC API，返回 JSON 数据。"""
     url = f"{PAPER_API_BASE}/{endpoint.lstrip('/')}"
-    resp = requests.get(url, timeout=30)
+    resp = requests.get(url, timeout=(15, 30))
     resp.raise_for_status()
     return resp.json()
 
@@ -193,14 +193,15 @@ def download_jar(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        resp = requests.get(download_url, stream=True, timeout=300, verify=verify)
+        # timeout=(connect, read): 30s connect + 60s between chunks
+        resp = requests.get(download_url, stream=True, timeout=(30, 60), verify=verify)
     except requests.exceptions.SSLError:
         if not verify:
             raise
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         logger.warning("SSL 校验失败，回退到非校验模式: {}", download_url)
-        resp = requests.get(download_url, stream=True, timeout=300, verify=False)
+        resp = requests.get(download_url, stream=True, timeout=(30, 60), verify=False)
     resp.raise_for_status()
 
     total = int(resp.headers.get("content-length", 0))
@@ -276,7 +277,7 @@ def _mojang_request(url: str, stream: bool = False, timeout: int = 30) -> reques
     import urllib3
 
     try:
-        return requests.get(url, timeout=timeout, stream=stream)
+        return requests.get(url, timeout=(15, 30), stream=stream)
     except requests.exceptions.SSLError:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         logger.warning(
@@ -284,7 +285,7 @@ def _mojang_request(url: str, stream: bool = False, timeout: int = 30) -> reques
             url,
         )
 
-    return requests.get(url, timeout=timeout, stream=stream, verify=False)
+    return requests.get(url, timeout=(15, 30), stream=stream, verify=False)
 
 
 def _get_mojang_server_info(version: str) -> dict[str, Any]:
