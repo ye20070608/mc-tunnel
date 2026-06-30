@@ -925,8 +925,9 @@ class MCServerAdapter:
         # 1) Explicit path from config
         explicit = self._config.mc.server_jar
         if explicit and Path(explicit).exists():
-            self._log.info("Using explicit server jar: {}", explicit)
-            return explicit
+            explicit_abs = str(Path(explicit).resolve())
+            self._log.info("Using explicit server jar: {}", explicit_abs)
+            return explicit_abs
 
         # 2) Match configured version — server/versions/{version}/
         ver = self._config.mc.version
