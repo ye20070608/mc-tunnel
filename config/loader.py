@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import shutil
 import sys
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -110,7 +109,12 @@ class Config:
 # 加载与合并
 # ---------------------------------------------------------------------------
 
-DEFAULTS_PATH = Path(__file__).resolve().parent / "defaults.yaml"
+# In PyInstaller --onefile mode the bundled defaults.yaml lives inside
+# sys._MEIPASS (a temp extraction directory), not next to this source file.
+if getattr(sys, 'frozen', False):
+    DEFAULTS_PATH = Path(sys._MEIPASS) / "config" / "defaults.yaml"
+else:
+    DEFAULTS_PATH = Path(__file__).resolve().parent / "defaults.yaml"
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -215,25 +219,37 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
 # 公开 API
 # ---------------------------------------------------------------------------
 
-def load_config(config_path: str | Path) -> Config:
+def load_config(config_path: str | Path, bundle_dir: Path | None = None) -> Config:
     """加载配置文件，合并默认值。
 
     1. 若用户配置文件不存在，从 defaults.yaml 复制
     2. 深合并：用户配置覆盖默认值
     3. 基础校验
+
+    Args:
+        config_path: 用户配置文件路径（相对于工作目录）。
+        bundle_dir: PyInstaller 打包资源目录（sys._MEIPASS），
+                    开发模式下为 None（使用 DEFAULTS_PATH）。
     """
+    import shutil
+
+    # Re-resolve DEFAULTS_PATH if bundle_dir was provided
+    _defaults = DEFAULTS_PATH
+    if bundle_dir is not None:
+        _defaults = bundle_dir / "config" / "defaults.yaml"
+
     config_path = Path(config_path)
 
     # 首次运行：复制默认配置
     if not config_path.exists():
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        if DEFAULTS_PATH.exists():
-            shutil.copy(DEFAULTS_PATH, config_path)
+        if _defaults.exists():
+            shutil.copy(_defaults, config_path)
             logger.info(f"首次运行，已创建配置文件: {config_path}")
             logger.info("请编辑此文件后重新运行程序")
             sys.exit(0)
         else:
-            logger.warning(f"默认配置模板不存在: {DEFAULTS_PATH}")
+            logger.warning(f"默认配置模板不存在: {_defaults}")
 
     # 加载默认值
     defaults = _load_yaml(DEFAULTS_PATH)

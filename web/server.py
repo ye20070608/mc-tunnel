@@ -13,6 +13,7 @@ Usage::
 
 import os
 import threading
+from pathlib import Path
 from typing import Any
 
 from flask import Flask, jsonify, render_template, request
@@ -95,7 +96,7 @@ def _get_jwt_secret(config: dict) -> str:
 DEFAULT_CONFIG: dict[str, Any] = {}
 
 
-def create_app(config: dict, logger) -> Flask:
+def create_app(config: dict, logger, bundle_dir=None) -> Flask:
     """Base Flask application factory with shared configuration.
 
     Sets up:
@@ -107,11 +108,25 @@ def create_app(config: dict, logger) -> Flask:
     Args:
         config: Application configuration dict (loaded from YAML).
         logger: Loguru or standard logger instance.
+        bundle_dir: Path to bundled resources (sys._MEIPASS in PyInstaller,
+                    project root in dev mode).  Used to resolve template/
+                    static directories.
 
     Returns:
         Configured Flask application.
     """
-    app = Flask(__name__)
+    # When bundled with PyInstaller --onefile the Flask default auto-
+    # discovery (relative to __name__) resolves into the temp extraction
+    # directory where templates/ and static/ do not exist.  Explicitly
+    # point at the packaged resource directories.
+    if bundle_dir is not None:
+        template_dir = str(Path(bundle_dir) / "web" / "templates")
+        static_dir = str(Path(bundle_dir) / "web" / "static")
+    else:
+        template_dir = "templates"
+        static_dir = "static"
+
+    app = Flask(__name__, template_folder=template_dir, static_folder=static_dir, static_url_path="/static")
 
     # --- Configuration ---
     web_cfg = config.get("web", {})
@@ -190,6 +205,7 @@ def create_admin_app(
     tunnel_manager=None,
     audit_logger=None,
     config_manager=None,
+    bundle_dir=None,
 ) -> Flask:
     """Create the admin dashboard application (port 8443).
 
@@ -205,11 +221,12 @@ def create_admin_app(
         tunnel_manager: Tunnel configuration manager.
         audit_logger: Audit log writer.
         config_manager: Config file read/write for admin operations.
+        bundle_dir: Path to bundled resources (passed through to create_app).
 
     Returns:
         Configured Flask application with all routes registered.
     """
-    app = create_app(config, logger)
+    app = create_app(config, logger, bundle_dir=bundle_dir)
 
     # --- Register all admin API blueprints (includes public_bp) ---
     register_routes(app, mc_adapter, tunnel_manager, audit_logger, config_manager)
@@ -289,6 +306,7 @@ def run_server(
     tunnel_manager=None,
     audit_logger=None,
     config_manager=None,
+    bundle_dir=None,
 ) -> None:
     """Start the Flask app on a single port with optional SSL.
 
@@ -306,9 +324,12 @@ def run_server(
         tunnel_manager: Tunnel configuration manager.
         audit_logger: Audit log writer.
         config_manager: Config file read/write for admin operations.
+        bundle_dir: Path to bundled resources (passed through to create_app
+                    for template/static resolution under PyInstaller).
     """
     app: Flask = create_admin_app(
         config, logger, mc_adapter, tunnel_manager, audit_logger, config_manager,
+        bundle_dir=bundle_dir,
     )
 
     admin_port: int = config.get("web", {}).get("admin_port", 8443)
