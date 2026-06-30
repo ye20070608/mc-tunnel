@@ -1065,7 +1065,7 @@ class MCServerAdapter:
         try:
             from mcipc.rcon import Client
 
-            with Client(self._rcon_host, self._rcon_port) as client:
+            with Client(self._rcon_host, self._rcon_port, timeout=3.0) as client:
                 client.login(self._rcon_password)
                 response = client.run(cmd)
                 return str(response or "")

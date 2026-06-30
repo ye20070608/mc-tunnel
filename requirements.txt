@@ -4,6 +4,7 @@
 # Web框架
 flask>=3.0,<4.0
 flask-cors>=4.0
+cheroot>=11.0            # 生产级 WSGI 服务器（线程池 + SSL + 超时）
 
 # 认证与安全
 bcrypt>=4.1
