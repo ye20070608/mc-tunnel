@@ -158,25 +158,30 @@ def list_stable_versions(limit: int = 20) -> list[str]:
 
 
 def list_all_stable_builds(limit: int = 30) -> list[str]:
-    """获取所有 PaperMC 稳定版本（含子版本如 1.21.11，不止版本组）。
+    """获取所有 PaperMC 稳定版本（仅具体构建，不含版本组名）。
 
     Fill v3 将版本分组（如 "1.21" 组下有 "1.21.11"、"1.21.10" 等），
-    此函数展开所有组的稳定构建并去重排序。
+    此函数展开所有组的稳定构建，过滤掉纯版本组名（如 "1.21"），
+    只返回有具体构建号的版本。
 
     Args:
         limit: 最多返回的版本数量
 
     Returns:
-        按版本号倒序排列的版本列表，如 ["1.21.11", "1.21.10", "1.21", ...]
+        按版本号倒序排列，如 ["1.21.11", "1.21.10", "1.20.6", ...]
     """
     data = _http_get("")
     versions_obj: dict = data.get("versions", {})
+    group_names = set(versions_obj.keys())
     all_versions: list[str] = []
     for group, builds in versions_obj.items():
         for build in builds:
             if not any(
                 tag in build for tag in ("-pre", "-rc", "-alpha", "-beta", "-snapshot")
             ):
+                # 跳过纯版本组名（大版本），只保留具体构建（如 1.21.11 而非 1.21）
+                if build in group_names:
+                    continue
                 if build not in all_versions:
                     all_versions.append(build)
     all_versions.sort(key=_version_key, reverse=True)
@@ -362,7 +367,7 @@ def _mojang_request(url: str, stream: bool = False, timeout: int = 30) -> reques
 
     Automatically rewrites Mojang URLs to use the BMCLAPI2 mirror for
     faster downloads from China.  Falls back to the official URL if the
-    mirror request fails.
+    mirror request fails (non-2xx status, SSL error, or connection error).
     """
     import urllib3
 
@@ -373,16 +378,24 @@ def _mojang_request(url: str, stream: bool = False, timeout: int = 30) -> reques
 
     last_error = None
     for u in urls_to_try:
-        try:
-            return requests.get(u, timeout=(15, 30), stream=stream)
-        except requests.exceptions.SSLError:
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        for verify_ssl in (True, False):
             try:
-                return requests.get(u, timeout=(15, 30), stream=stream, verify=False)
+                if not verify_ssl:
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                resp = requests.get(u, timeout=(15, 30), stream=stream, verify=verify_ssl)
+                if resp.ok:
+                    return resp
+                # Non-2xx → try next URL or SSL mode
+                last_error = RuntimeError(
+                    f"HTTP {resp.status_code} for {u[:60]}"
+                )
+            except requests.exceptions.SSLError:
+                if not verify_ssl:
+                    last_error = RuntimeError(f"SSL error for {u[:60]}")
+                continue  # try verify=False
             except Exception as e:
                 last_error = e
-        except Exception as e:
-            last_error = e
+                continue
 
     raise RuntimeError(f"Mojang 请求失败（所有源均不可用）: {last_error}")
 
