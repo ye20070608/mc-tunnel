@@ -36,10 +36,6 @@ _MOJANG_MIRROR_MAP = {
     "https://piston-meta.mojang.com": "https://bmclapi2.bangbang93.com",
     "https://launcher.mojang.com": "https://bmclapi2.bangbang93.com",
 }
-# 将 PaperMC Fill Data CDN URL 映射到 BMCLAPI2 镜像
-_FILL_DATA_MIRROR_MAP = {
-    "https://fill-data.papermc.io": FILL_API_MIRROR,
-}
 
 # ---------------------------------------------------------------------------
 # Thread-safe download progress state (for Web UI polling)
@@ -97,13 +93,6 @@ def _mark_progress_error() -> None:
         _download_progress["status"] = "error"
         _download_progress["phase"] = ""
 
-
-def _rewrite_fill_url(url: str) -> str:
-    """将 PaperMC Fill Data CDN URL 改写为 BMCLAPI2 国内镜像。"""
-    for official, mirror in _FILL_DATA_MIRROR_MAP.items():
-        if url.startswith(official):
-            return url.replace(official, mirror)
-    return url
 
 
 def _http_get(endpoint: str) -> dict | list:
@@ -800,11 +789,13 @@ def ensure_server_jar(
             )
 
     download_url = info["download_url"]
-    mirror_url = _rewrite_fill_url(download_url)
+    file_name = info.get("file_name", f"paper-{version}-{build}.jar")
 
-    # 镜像优先，失败回退官方 CDN
-    urls_to_try = [mirror_url] if mirror_url != download_url else []
-    urls_to_try.append(download_url)
+    # BMCLAPI2 国内镜像优先，失败回退 PaperMC 官方 CDN
+    mirror_url = (
+        f"{FILL_API_MIRROR}/paper/{info['version']}/{info['build']}/download"
+    )
+    urls_to_try = [mirror_url, download_url]
 
     last_error = None
     for url in urls_to_try:
@@ -827,7 +818,6 @@ def ensure_server_jar(
         except (requests.HTTPError, ValueError) as e:
             last_error = e
             if url == urls_to_try[-1]:
-                # 最后一个 URL 也失败了 → Mojang fallback
                 return _fallback_to_mojang("下载失败", e)
             logger.warning("镜像下载失败，回退官方源: {}", e)
         except Exception as e:
