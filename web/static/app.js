@@ -961,6 +961,8 @@ function loadServerCenter() {
   apiCall('/api/server/info').then(function (data) {
     updateServerCenter(data);
   }).catch(function () {});
+  // Always refresh world list alongside versions
+  loadWorlds();
 }
 
 async function switchVersion(version) {
