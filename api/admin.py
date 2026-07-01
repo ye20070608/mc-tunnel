@@ -236,6 +236,22 @@ def operation_log():
         return jsonify({"error": "log_error", "message": str(e)}), 500
 
 
+def _parse_world_name(level_name: str) -> str:
+    """从 level_name 路径中提取世界名称。
+
+    ``"worlds/foo/world"`` → ``"foo"``
+    ``"worlds/bar"`` → ``"bar"``
+    ``"baz"`` → ``"baz"``
+    """
+    from pathlib import Path
+    parts = Path(level_name).parts
+    if len(parts) >= 3 and parts[0] == "worlds" and parts[-1] == "world":
+        return parts[1]
+    if len(parts) >= 2 and parts[0] == "worlds":
+        return parts[1]
+    return parts[0] if parts else level_name
+
+
 @admin_bp.route("/save-config", methods=["POST"])
 @jwt_required
 @csrf_protect
@@ -319,6 +335,23 @@ def save_config():
             os.unlink(tmp_path)
             raise
         current_app.logger.info("Configuration saved by setup wizard")
+
+        # 确保世界目录存在 — 配置向导只写 YAML，不创建磁盘上的世界目录，
+        # 而世界列表通过扫描 server/worlds/ 来显示。不创建的话，在 PaperMC
+        # 首次启动前管理面板的世界列表始终为空。
+        level_name = raw.get("world", {}).get("level_name", "worlds/world/world")
+        world_name = _parse_world_name(level_name)
+        if world_name:
+            try:
+                from core.mcserver.worlds import WorldManager
+                wm = WorldManager()
+                if wm.create_world(world_name, seed=world_data.get("seed", "")):
+                    wm.activate_world(world_name)
+                    current_app.logger.info(
+                        "世界目录已创建并激活: {}", world_name
+                    )
+            except Exception as exc:
+                current_app.logger.warning("创建世界目录失败（将依赖 PaperMC 首次启动创建）: {}", exc)
 
         # Reload tunnel config so frpc uses the latest settings
         tunnel_mgr = getattr(current_app, "tunnel_manager", None)
