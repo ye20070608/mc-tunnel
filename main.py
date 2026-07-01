@@ -406,9 +406,11 @@ def main() -> None:
     else:
         logger.info("未配置隧道服务器，跳过 frp 管理")
 
-    # Print frpc download guide if binary is missing (regardless of tunnel config)
+    # Block launch if frpc binary is missing — user must download it first
     if _frpc_missing:
         _print_frpc_download_guide()
+        logger.error("frpc 未下载，程序退出。请将 frpc 放入 frp/ 目录后重新启动。")
+        sys.exit(1)
 
     # ── 8. 启动 Web 服务 ──────────────────────────────────────
     from dataclasses import asdict
