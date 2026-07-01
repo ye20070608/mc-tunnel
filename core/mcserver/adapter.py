@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -76,6 +77,114 @@ class MCServerAdapter:
             rcon_password=self._rcon_password,
             rcon_port=self._rcon_port,
         )
+
+        # Background cache — avoids blocking frontend request threads on RCON.
+        # A daemon thread polls the MC server periodically and stores frozen
+        # snapshots; API handlers read from the cache with zero latency.
+        self._cache_lock = threading.Lock()
+        self._cache_status: dict[str, Any] = {
+            "online": False, "status": "stopped", "onlinePlayers": 0,
+            "maxPlayers": 0, "tps": 0.0, "version": "", "motd": "",
+            "uptime": 0.0, "memory": {}, "cpu": 0.0,
+        }
+        self._cache_players: list[dict[str, Any]] = []
+        self._cache_console: list[str] = []
+        self._cache_thread: threading.Thread | None = None
+        self._cache_running = False
+
+        # Start background cache immediately so API handlers never block
+        self._start_cache_thread()
+
+    # ------------------------------------------------------------------
+    # Background cache — polls MC server so API handlers never block
+    # ------------------------------------------------------------------
+
+    def _start_cache_thread(self) -> None:
+        """Launch the background cache poller (daemon, restarts on crash)."""
+        if self._cache_running:
+            return
+        self._cache_running = True
+        self._cache_thread = threading.Thread(
+            target=self._cache_poller, daemon=True, name="mc-cache-poller"
+        )
+        self._cache_thread.start()
+        self._log.info("Background status cache started")
+
+    def _stop_cache_thread(self) -> None:
+        """Signal the cache poller to stop."""
+        self._cache_running = False
+
+    def _cache_poller(self) -> None:
+        """Background loop: poll MC server every 3 s, update cache."""
+        while self._cache_running:
+            try:
+                self._refresh_cache()
+            except Exception:
+                pass  # keep last-known-good values
+            time.sleep(3)
+
+    def _refresh_cache(self) -> None:
+        """Single poll cycle — refresh all cached data from the MC server."""
+        running = self._process.is_running()
+        now = time.time()
+
+        # ── Status ──────────────────────────────────────────────
+        status: dict[str, Any] = {"online": False, "status": "stopped",
+                                   "onlinePlayers": 0, "maxPlayers": 0,
+                                   "tps": 0.0, "version": "", "motd": "",
+                                   "uptime": 0.0, "memory": {}, "cpu": 0.0}
+        if running:
+            status["online"] = True
+            status["status"] = "running"
+            try:
+                basic = self._status_collector.get_basic_status()
+                status.update(basic)
+            except Exception:
+                pass
+            try:
+                detailed = self._status_collector.get_detailed_status()
+                status.update(detailed)
+            except Exception:
+                pass
+
+        # ── Players ─────────────────────────────────────────────
+        players: list[dict[str, Any]] = []
+        if running:
+            try:
+                response = self._rcon_command("list")
+                players = self._parse_player_list(response)
+                ops = self._get_ops()
+                for p in players:
+                    name = p["name"]
+                    p["is_op"] = name.lower() in ops
+                    join_time = self._player_join_times.get(name)
+                    if not join_time:
+                        self._player_join_times[name] = datetime.now()
+                        join_time = self._player_join_times[name]
+                    elapsed = datetime.now() - join_time
+                    p["online_time"] = str(elapsed).split(".")[0]
+                    # Enrich with coords / world (throttled to every 5 s)
+                    if name not in self._last_enrich or now - self._last_enrich[name] > 5:
+                        self._enrich_player(name)
+                        self._last_enrich[name] = now
+                    cached = self._enriched_cache.get(name, {})
+                    p["world"] = cached.get("world", "未知")
+                    p["coords"] = cached.get("coords", "未知")
+            except Exception:
+                pass  # keep previous player list
+
+        # ── Console ─────────────────────────────────────────────
+        console: list[str] = []
+        try:
+            console = self._get_console_raw(limit=200)
+        except Exception:
+            pass
+
+        # ── Commit ──────────────────────────────────────────────
+        with self._cache_lock:
+            self._cache_status = status
+            self._cache_players = players
+            self._cache_console = console
 
     # ------------------------------------------------------------------
     # Public API
@@ -183,120 +292,24 @@ class MCServerAdapter:
         return self._rcon_command(cmd)
 
     def get_status(self) -> dict[str, Any]:
-        """Return a comprehensive status dictionary.
+        """Return cached server status (updated every 3 s by background thread).
 
-        Combines Server List Ping data with RCON-augmented detail when
-        available.  Returns a safe "offline" state when the server is not
-        running.
-
-        Returns:
-            Dict with keys ``online``, ``onlinePlayers``, ``maxPlayers``,
-            ``tps``, ``version``, ``motd``, ``uptime``, ``memory``, ``cpu``.
+        Never blocks — reads from the thread-safe cache.
         """
-        if not self._process.is_running():
-            return {
-                "online": False,
-                "status": "stopped",
-                "onlinePlayers": 0,
-                "maxPlayers": 0,
-                "tps": 0.0,
-                "version": "",
-                "motd": "",
-                "uptime": 0.0,
-                "memory": {},
-                "cpu": 0.0,
-            }
-
-        result: dict[str, Any] = {"online": True, "status": "running"}
-
-        # Basic info via Server List Ping
-        try:
-            basic = self._status_collector.get_basic_status()
-            result.update(basic)
-        except Exception as e:
-            self._log.warning("Server List Ping failed: {}", e)
-            result.update({"onlinePlayers": 0, "maxPlayers": 0, "motd": "", "version": ""})
-
-        # Augment with RCON detail
-        try:
-            detailed = self._status_collector.get_detailed_status()
-            result.update(detailed)
-        except Exception as e:
-            self._log.warning("RCON detail query failed: {}", e)
-            result.update({"tps": 0.0, "uptime": 0.0, "memory": {}, "cpu": 0.0})
-
-        return result
+        with self._cache_lock:
+            return dict(self._cache_status)
 
     # ------------------------------------------------------------------
     # Player management
     # ------------------------------------------------------------------
 
     def get_players(self) -> list[dict[str, Any]]:
-        """Return a list of currently online players with enriched detail.
+        """Return cached online player list (updated every 3 s by background thread).
 
-        Uses the RCON ``list`` command for basic names, then merges
-        cached enrichment data (world, coordinates) and join-time
-        tracking from console output.
-
-        Returns:
-            List of player dicts with keys ``name``, ``ping``,
-            ``gamemode``, ``joined``, ``is_op``, ``online_time``,
-            ``world``, ``coords``.
+        Never blocks — reads from the thread-safe cache.
         """
-        if not self._process.is_running():
-            return []
-
-        try:
-            response = self._rcon_command("list")
-            players = self._parse_player_list(response)
-            ops = self._get_ops()
-            now = datetime.now()
-
-            for p in players:
-                name = p["name"]
-                p["is_op"] = name.lower() in ops
-
-                # Online time from console join tracking
-                join_time = self._player_join_times.get(name)
-                if not join_time:
-                    # Player was already online when tracking started
-                    # — record now as join time so duration starts counting
-                    self._player_join_times[name] = now
-                    join_time = now
-
-                p["online_time"] = self._format_duration(
-                    (now - join_time).total_seconds()
-                )
-
-                # Enrichment cache (world + coords + gamemode via RCON, lazy)
-                enriched = self._enriched_cache.get(name, {})
-                p["world"] = enriched.get("world", "")
-                p["coords"] = enriched.get("coords", "")
-                p["gamemode"] = enriched.get("gamemode", "")
-
-                # Schedule enrichment if stale (>10 s) or never done
-                last = self._last_enrich.get(name, 0)
-                if (now.timestamp() - last) > 10:
-                    import threading
-                    threading.Thread(
-                        target=self._enrich_player, args=(name,), daemon=True
-                    ).start()
-
-            # Refresh last_online for every online player so the UI always
-            # shows "now" while they are connected — even if they were already
-            # online at server start or joined hours ago.
-            if players:
-                try:
-                    wm = WhitelistManager(self)
-                    for p in players:
-                        wm.record_last_online(p["name"], now)
-                except Exception:
-                    pass
-
-            return players
-        except Exception as e:
-            self._log.warning("Failed to get player list: {}", e)
-            return []
+        with self._cache_lock:
+            return list(self._cache_players)
 
     def _on_server_output(self, line: str) -> None:
         """Detect player join/leave/rejection events from server console output."""
@@ -847,17 +860,16 @@ class MCServerAdapter:
         return dict(self._player_ips)
 
     def get_console_output(self, limit: int = 100) -> list[str]:
-        """Return recent lines of the Minecraft server console output.
+        """Return cached console lines (updated every 3 s by background thread).
 
-        Retrieves lines from the process manager's ring buffer.
-
-        Args:
-            limit: Maximum number of lines to return (newest first).
-
-        Returns:
-            List of console output lines (may be empty if the server
-            has not been started).
+        Never blocks — reads from the thread-safe cache.
         """
+        with self._cache_lock:
+            lines = list(self._cache_console)
+        return lines[-limit:] if limit > 0 else lines
+
+    def _get_console_raw(self, limit: int = 200) -> list[str]:
+        """Read console buffer directly (used by cache refresher, may block)."""
         return self._process.get_console_buffer(limit)
 
     # ------------------------------------------------------------------
