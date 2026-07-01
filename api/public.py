@@ -6,7 +6,7 @@ can consume without any credentials.
 
 from flask import Blueprint, current_app, jsonify
 
-from core.mcserver.downloader import get_download_progress, list_stable_versions
+from core.mcserver.downloader import get_download_progress, list_all_stable_builds
 from loguru import logger
 
 public_bp = Blueprint("public", __name__, url_prefix="/api/public")
@@ -28,7 +28,7 @@ def versions():
     current_version = mc_cfg.get("version", "1.20.1")
 
     try:
-        versions = list_stable_versions(limit=20)
+        versions = list_all_stable_builds(limit=30)
     except Exception as e:
         logger.warning(f"获取 PaperMC 版本列表失败: {e}")
         # 离线降级：返回内置列表

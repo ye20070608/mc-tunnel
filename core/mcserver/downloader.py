@@ -128,10 +128,10 @@ def _version_key(version: str) -> tuple[int, ...]:
 
 
 def get_available_versions() -> list[str]:
-    """获取 PaperMC 支持的所有版本列表，按版本号倒序排列。
+    """获取 PaperMC 支持的所有版本列表（版本组名）。
 
     Fill v3 的 ``/v3/projects/paper`` 返回 ``versions`` 对象，
-    其键为版本号字符串。
+    其键为版本组名（如 "1.21"、"1.20"）。
     """
     data = _http_get("")
     versions_obj: dict = data.get("versions", {})
@@ -141,13 +141,13 @@ def get_available_versions() -> list[str]:
 
 
 def list_stable_versions(limit: int = 20) -> list[str]:
-    """获取 PaperMC 可用稳定版本列表（仅正式版，不含快照）。
+    """获取 PaperMC 可用稳定版本列表（版本组名，仅正式版）。
 
     Args:
         limit: 最多返回的版本数量
 
     Returns:
-        按版本号倒序排列的版本列表，如 ["1.21", "1.20.6", "1.20.4", ...]
+        按版本号倒序排列的版本组名列表，如 ["1.21", "1.20.6", "1.20.4", ...]
     """
     all_versions = get_available_versions()
     # 过滤掉包含 "-pre"、"-rc"、"-alpha"、"-beta" 的预发布版本
@@ -157,16 +157,62 @@ def list_stable_versions(limit: int = 20) -> list[str]:
     return stable[:limit]
 
 
+def list_all_stable_builds(limit: int = 30) -> list[str]:
+    """获取所有 PaperMC 稳定版本（含子版本如 1.21.11，不止版本组）。
+
+    Fill v3 将版本分组（如 "1.21" 组下有 "1.21.11"、"1.21.10" 等），
+    此函数展开所有组的稳定构建并去重排序。
+
+    Args:
+        limit: 最多返回的版本数量
+
+    Returns:
+        按版本号倒序排列的版本列表，如 ["1.21.11", "1.21.10", "1.21", ...]
+    """
+    data = _http_get("")
+    versions_obj: dict = data.get("versions", {})
+    all_versions: list[str] = []
+    for group, builds in versions_obj.items():
+        for build in builds:
+            if not any(
+                tag in build for tag in ("-pre", "-rc", "-alpha", "-beta", "-snapshot")
+            ):
+                if build not in all_versions:
+                    all_versions.append(build)
+    all_versions.sort(key=_version_key, reverse=True)
+    return all_versions[:limit]
+
+
 def get_latest_build(version: str) -> int:
     """获取指定版本的 PaperMC 最新 build 编号。
 
     Fill v3 返回完整的构建对象，其中 ``id`` 为 build 编号。
+    如果指定版本找不到，尝试回退到主版本组（如 1.21.11 → 1.21）。
     """
-    data = _http_get(f"versions/{version}/builds/latest")
-    build_id: int = data.get("id", 0)
-    if not build_id:
-        raise ValueError(f"PaperMC 版本 '{version}' 没有可用构建")
-    return build_id
+    # Try the exact version first, then fall back to major.minor group
+    versions_to_try = [version]
+    parts = version.split(".")
+    if len(parts) > 2:
+        # e.g. "1.21.11" → also try "1.21"
+        group = ".".join(parts[:2])
+        if group != version:
+            versions_to_try.append(group)
+
+    last_error = None
+    for v in versions_to_try:
+        try:
+            data = _http_get(f"versions/{v}/builds/latest")
+            build_id: int = data.get("id", 0)
+            if build_id:
+                return build_id
+        except Exception as e:
+            last_error = e
+            continue
+
+    raise ValueError(
+        f"PaperMC 版本 '{version}' 没有可用构建"
+        + (f"（也在组中查找失败: {last_error}）" if last_error else "")
+    )
 
 
 def get_download_info(version: str, build: int) -> dict:
