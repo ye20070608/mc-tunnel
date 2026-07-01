@@ -433,17 +433,29 @@ class WorldManager:
         return max(mtimes) if mtimes else 0.0
 
     def _get_active_world(self) -> str:
-        """Read ``level-name`` from ``server.properties``.
-
-        Returns the raw value (e.g. ``"worlds/world/world"`` or ``"world"``).
+        """Read ``level-name`` from ``server.properties``, falling back to
+        ``config.yaml`` when the properties file doesn't exist yet (first run,
+        server not started).
         """
         props_path = self._server_dir / "server.properties"
-        if not props_path.exists():
-            return "worlds/world/world"
-        for line in props_path.read_text(encoding="utf-8").splitlines():
-            stripped = line.strip()
-            if stripped.startswith("level-name="):
-                return stripped.split("=", 1)[1].strip()
+        if props_path.exists():
+            for line in props_path.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if stripped.startswith("level-name="):
+                    return stripped.split("=", 1)[1].strip()
+
+        # Fallback: read from config.yaml (set by activate_world before first start)
+        try:
+            import yaml
+            cm_path = Path("config/config.yaml")
+            if cm_path.exists():
+                raw = yaml.safe_load(cm_path.read_text(encoding="utf-8")) or {}
+                level_name = raw.get("world", {}).get("level_name", "")
+                if level_name:
+                    return level_name
+        except Exception:
+            pass
+
         return "worlds/world/world"
 
     def _set_active_world(self, name: str) -> None:
