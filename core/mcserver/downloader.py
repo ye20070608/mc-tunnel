@@ -611,13 +611,14 @@ def ensure_server_jar(
             _mark_progress_done()
             return existing.resolve()
 
-    # 3. 从 PaperMC API 下载 Paperclip JAR（必需的，直接启动用）
-    logger.info(f"PaperMC {version} — 获取最新构建信息...")
-    build = get_latest_build(version)
-    info = get_download_info(version, build)
+    # 3. 下载 MC 服务端 JAR
+    #    策略：优先 PaperMC API，同时后台预下载 Mojang 原版作为 fallback。
+    #    PaperMC API 任一环节失败（API 报错/网络不通/版本不存在如 410 Gone）
+    #    → 等待 Mojang 后台线程完成，自动回退到原版 JAR。
+    version_dir = Path(output_dir) / "versions" / version
+    version_dir.mkdir(parents=True, exist_ok=True)
 
-    # 后台预下载 Mojang 原版 JAR（BMCLAPI2 镜像加速）
-    # PaperMC API 国内经常不可达，Mojang 下载作为 fallback
+    # 先启动 Mojang 后台下载（BMCLAPI2 镜像加速），确保 PaperMC 失败时有备选
     _mojang_thread = threading.Thread(
         target=_ensure_mojang_jar,
         args=(version, output_dir, show_progress),
@@ -625,14 +626,40 @@ def ensure_server_jar(
     )
     _mojang_thread.start()
 
+    def _fallback_to_mojang(reason: str, source_error: Exception) -> Path:
+        """PaperMC 失败 → 等待 Mojang 后台线程，返回 Mojang JAR 路径或 raise。"""
+        logger.warning("PaperMC {}: {}", reason, source_error)
+        logger.info("等待 Mojang 镜像下载完成（BMCLAPI2）...")
+        _mojang_thread.join(timeout=300)
+
+        mojang_jar = version_dir / f"mojang_{version}.jar"
+        if mojang_jar.exists():
+            logger.info("使用 Mojang 原版服务端（BMCLAPI2 镜像下载）")
+            _update_server_jar_link(mojang_jar, Path(output_dir) / "server.jar")
+            _clear_progress_state()
+            _mark_progress_done()
+            return mojang_jar.resolve()
+
+        _mark_progress_error()
+        logger.error("Mojang 镜像下载也未完成，无法启动")
+        raise RuntimeError(
+            "PaperMC 和 Mojang 下载均失败，请检查网络后重试"
+        ) from source_error
+
+    logger.info(f"PaperMC {version} — 获取最新构建信息...")
+    try:
+        build = get_latest_build(version)
+        info = get_download_info(version, build)
+    except (requests.HTTPError, ValueError, RuntimeError) as e:
+        # PaperMC API 报错（_http_get 将 HTTPError 包装为 RuntimeError，如 410 Gone）
+        # 或版本无构建（ValueError）→ Mojang fallback
+        return _fallback_to_mojang("API 不可用", e)
+
     logger.info(
         f"准备下载 PaperMC {info['version']} build #{info['build']} "
         f"({info['file_name']})"
     )
 
-    # 保存到版本隔离目录，支持多版本共存
-    version_dir = Path(output_dir) / "versions" / version
-    version_dir.mkdir(parents=True, exist_ok=True)
     output_path = version_dir / info["file_name"]
 
     _progress_last_logged_pct = [-5]  # mutable: log at 0% immediately
@@ -666,28 +693,11 @@ def ensure_server_jar(
         _update_server_jar_link(output_path, Path(output_dir) / "server.jar")
         _clear_progress_state()  # 重置计数器，准备下一阶段
     except (requests.HTTPError, ValueError) as e:
-        _mark_progress_error()
-        logger.error(str(e))
-        raise
+        # PaperMC JAR 下载本身的 HTTP/校验错误 → Mojang fallback
+        return _fallback_to_mojang("下载失败", e)
     except Exception as e:
-        # PaperMC API 不可达（国内常见）→ 等 Mojang 镜像下载完成作为 fallback
-        logger.warning("PaperMC 下载失败: {}", e)
-        logger.info("等待 Mojang 镜像下载完成（BMCLAPI2）...")
-        _mojang_thread.join(timeout=300)  # 最多等 5 分钟
-
-        mojang_jar = version_dir / f"mojang_{version}.jar"
-        if mojang_jar.exists():
-            logger.info("使用 Mojang 原版服务端（BMCLAPI2 镜像下载）")
-            _update_server_jar_link(mojang_jar, Path(output_dir) / "server.jar")
-            _clear_progress_state()
-            _mark_progress_done()
-            return mojang_jar.resolve()
-        else:
-            _mark_progress_error()
-            logger.error("Mojang 镜像下载也未完成，无法启动")
-            raise RuntimeError(
-                "PaperMC 和 Mojang 下载均失败，请检查网络后重试"
-            )
+        # 网络不可达等其他异常 → Mojang fallback
+        return _fallback_to_mojang("下载失败", e)
 
     _mark_progress_done()
     return output_path.resolve()
