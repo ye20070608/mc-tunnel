@@ -367,6 +367,7 @@ def main() -> None:
     # ── 检测 frpc 二进制（独立于隧道配置，提前提示用户下载）──
     import platform
     _frp_dir = Path.cwd() / "frp"
+    _frp_dir.mkdir(exist_ok=True)  # 确保 frp/ 目录存在
     _frpc_path = None
     _candidates = (
         ["frpc.exe", "frpc_windows_amd64.exe", "frpc_windows_386.exe"]
