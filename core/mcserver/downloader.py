@@ -563,9 +563,10 @@ def _find_existing_jar(version: str, output_dir: str) -> Path | None:
 
     按优先级查找：
     1. server/versions/{version}/paper-{version}-*.jar（精确匹配）
-    2. server/versions/*/paper-*.jar（任何已安装版本，取最新）
-    3. server/server.jar（通用命名）
-    4. server/paper-*.jar（旧版平铺结构迁移兼容）
+    2. server/versions/{version}/mojang_{version}.jar（Mojang 回退产物）
+    3. server/versions/*/paper-*.jar（任何已安装版本，取最新）
+    4. server/server.jar（通用命名）
+    5. server/paper-*.jar（旧版平铺结构迁移兼容）
     """
     import re
     base = Path(output_dir)
@@ -575,7 +576,7 @@ def _find_existing_jar(version: str, output_dir: str) -> Path | None:
         logger.warning("Invalid version string for JAR search: {}", version)
         return None
 
-    # 1. 精确版本匹配 — server/versions/{version}/
+    # 1. 精确版本匹配 — server/versions/{version}/paper-{version}-*.jar
     versions_dir = base / "versions" / version
     matches = list(versions_dir.glob(f"paper-{version}-*.jar"))
     # 兼容无 build 号的文件名: paper-{version}.jar
@@ -585,10 +586,17 @@ def _find_existing_jar(version: str, output_dir: str) -> Path | None:
         logger.debug("Found JAR in versions/{}: {}", version, matches[0].name)
         return matches[0]
 
+    # 1.5 Mojang 回退产物 — server/versions/{version}/mojang_{version}.jar
+    mojang_jar = versions_dir / f"mojang_{version}.jar"
+    if mojang_jar.exists():
+        logger.debug("Found Mojang JAR in versions/{}: {}", version, mojang_jar.name)
+        return mojang_jar
+
     # 2. 回退 — 任意已安装版本（取最新 build）
     all_versions = base / "versions"
     if all_versions.exists():
         matches = list(all_versions.glob("*/paper-*.jar"))
+        matches += list(all_versions.glob("*/mojang_*.jar"))
         if matches:
             matches.sort(reverse=True)
             logger.debug("Found JAR in versions/*/: {}", matches[0].name)
