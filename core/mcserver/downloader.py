@@ -1,10 +1,11 @@
 """
 PaperMC 服务端 JAR 下载模块。
 
-通过 PaperMC v2 API 获取指定版本的 JAR 文件，支持：
+通过 PaperMC Fill v3 API 获取指定版本的 JAR 文件，支持：
 - 获取最新 build 信息
 - 流式下载 + 进度显示
 - SHA256 完整性校验
+- PaperMC API 失败时自动回退到 Mojang 原版 JAR
 """
 
 from __future__ import annotations
@@ -18,10 +19,13 @@ import requests
 from loguru import logger
 
 # ---------------------------------------------------------------------------
-# PaperMC v2 API
+# PaperMC Fill v3 API (v2 API 已于 2026-07-01 关闭)
 # ---------------------------------------------------------------------------
 
-PAPER_API_BASE = "https://api.papermc.io/v2/projects/paper"
+FILL_API_BASE = "https://fill.papermc.io"
+FILL_API_PREFIX = "/v3/projects/paper"
+# User-Agent 必须标识软件 + 联系方式（Fill v3 要求）
+_USER_AGENT = "mc-tunnel/1.0 (ye20070608@126.com)"
 # BMCLAPI2 国内镜像 — 加速 Mojang 原版 JAR 下载
 MOJANG_MANIFEST_MIRROR = "https://bmclapi2.bangbang93.com/mc/game/version_manifest.json"
 # 将 Mojang 官方 URL 映射到 BMCLAPI2 镜像
@@ -89,19 +93,20 @@ def _mark_progress_error() -> None:
 
 
 def _http_get(endpoint: str) -> dict | list:
-    """发送 GET 请求到 PaperMC API，返回 JSON 数据。
+    """发送 GET 请求到 PaperMC Fill v3 API，返回 JSON 数据。
 
-    国内访问 api.papermc.io 可能极慢，先尝试跳过 SSL 验证的连接。
+    Fill v3 要求 User-Agent 头部标识软件名和联系方式。
     """
     import urllib3
 
-    url = f"{PAPER_API_BASE}/{endpoint.lstrip('/')}"
+    url = f"{FILL_API_BASE}{FILL_API_PREFIX}/{endpoint.lstrip('/')}"
+    headers = {"User-Agent": _USER_AGENT}
     last_error = None
     for verify_ssl in (False, True):  # 优先跳过 SSL（国内 CDN 证书链问题）
         try:
             if not verify_ssl:
                 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            resp = requests.get(url, timeout=(10, 25), verify=verify_ssl)
+            resp = requests.get(url, timeout=(10, 25), verify=verify_ssl, headers=headers)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -122,9 +127,14 @@ def _version_key(version: str) -> tuple[int, ...]:
 
 
 def get_available_versions() -> list[str]:
-    """获取 PaperMC 支持的所有版本列表，按版本号倒序排列。"""
+    """获取 PaperMC 支持的所有版本列表，按版本号倒序排列。
+
+    Fill v3 的 ``/v3/projects/paper`` 返回 ``versions`` 对象，
+    其键为版本号字符串。
+    """
     data = _http_get("")
-    versions: list[str] = data.get("versions", [])
+    versions_obj: dict = data.get("versions", {})
+    versions: list[str] = list(versions_obj.keys())
     versions.sort(key=_version_key, reverse=True)
     return versions
 
@@ -147,43 +157,50 @@ def list_stable_versions(limit: int = 20) -> list[str]:
 
 
 def get_latest_build(version: str) -> int:
-    """获取指定版本的 PaperMC 最新 build 编号。"""
-    data = _http_get(f"versions/{version}")
-    builds: list[int] = data.get("builds", [])
-    if not builds:
+    """获取指定版本的 PaperMC 最新 build 编号。
+
+    Fill v3 返回完整的构建对象，其中 ``id`` 为 build 编号。
+    """
+    data = _http_get(f"versions/{version}/builds/latest")
+    build_id: int = data.get("id", 0)
+    if not build_id:
         raise ValueError(f"PaperMC 版本 '{version}' 没有可用构建")
-    return builds[-1]
+    return build_id
 
 
 def get_download_info(version: str, build: int) -> dict:
-    """获取指定 build 的下载信息（文件 URL、SHA256、版本名等）。
+    """获取指定 build 的下载信息（文件 URL、SHA256、文件名等）。
+
+    Fill v3 在构建详情中直接嵌入完整的下载 URL，
+    无需像 v2 那样手动拼接。
 
     返回:
         {
             "version": str,      # 如 "1.20.4"
-            "build": int,        # 如 496
-            "file_name": str,    # 如 "paper-1.20.4-496.jar"
-            "download_url": str, # 下载链接
+            "build": int,        # 如 196
+            "file_name": str,    # 如 "paper-1.20.4-196.jar"
+            "download_url": str, # 下载链接（完整 URL）
             "sha256": str,       # SHA256 哈希值
         }
     """
     data = _http_get(f"versions/{version}/builds/{build}")
-    version_name: str = data.get("version", version)
-    build_num: int = data.get("build", build)
     downloads: dict = data.get("downloads", {})
-    application: dict = downloads.get("application", {})
+    # Fill v3 uses "server:default" (old v2 was "application")
+    application: dict = downloads.get("server:default", {})
 
     file_name: str = application.get("name", f"paper-{version}-{build}.jar")
-    sha256: str = application.get("sha256", "")
+    checksums: dict = application.get("checksums", {})
+    sha256: str = checksums.get("sha256", "")
+    download_url: str = application.get("url", "")
 
-    download_url = (
-        f"{PAPER_API_BASE}/versions/{version}/builds/{build}"
-        f"/downloads/{file_name}"
-    )
+    if not download_url:
+        raise ValueError(
+            f"PaperMC build #{build} (version {version}) 没有下载链接"
+        )
 
     return {
-        "version": version_name,
-        "build": build_num,
+        "version": version,
+        "build": build,
         "file_name": file_name,
         "download_url": download_url,
         "sha256": sha256,
