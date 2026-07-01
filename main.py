@@ -409,7 +409,12 @@ def main() -> None:
     # Block launch if frpc binary is missing — user must download it first
     if _frpc_missing:
         _print_frpc_download_guide()
-        logger.error("frpc 未下载，程序退出。请将 frpc 放入 frp/ 目录后重新启动。")
+        logger.error("frpc 未下载，请将 frpc 放入 frp/ 目录后重新启动。")
+        print()
+        try:
+            input("  按 Enter 键退出...")
+        except (EOFError, KeyboardInterrupt):
+            print()
         sys.exit(1)
 
     # ── 8. 启动 Web 服务 ──────────────────────────────────────
