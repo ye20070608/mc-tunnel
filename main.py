@@ -364,33 +364,37 @@ def main() -> None:
     mc_adapter = MCServerAdapter(cfg, logger)
     logger.info(f"MC 适配器已初始化: {jar_path}")
 
+    # ── 检测 frpc 二进制（独立于隧道配置，提前提示用户下载）──
+    import platform
+    _frp_dir = Path.cwd() / "frp"
+    _frpc_path = None
+    _candidates = (
+        ["frpc.exe", "frpc_windows_amd64.exe", "frpc_windows_386.exe"]
+        if platform.system() == "Windows"
+        else ["frpc", "frpc_linux_amd64", "frpc_linux_arm64"]
+    )
+    for _name in _candidates:
+        _test = _frp_dir / _name
+        if _test.exists():
+            _frpc_path = str(_test)
+            break
+    # Fallback: any frpc* binary in frp/
+    if _frpc_path is None:
+        _wild = sorted(_frp_dir.glob("frpc*"))
+        if _wild:
+            _frpc_path = str(_wild[0])
+    # Last resort: try PATH
+    _bare_fallback = "frpc.exe" if platform.system() == "Windows" else "frpc"
+    if _frpc_path is None:
+        _frpc_path = _bare_fallback
+
+    # Check if frpc binary actually exists locally (PATH-only fallback → not in frp/)
+    _frpc_missing = (_frpc_path == _bare_fallback)
+
     # 创建隧道管理器（标准 frp 需 token，樱花 Frp 需 user）
     tunnel_manager = None
     if cfg.tunnel.server_addr and (cfg.tunnel.token or cfg.tunnel.user):
         from core.tunnel.client import FrpClient
-
-        # Auto-detect frpc binary (prefer exact match, then wildcard)
-        import platform
-        _cwd = Path.cwd() / "frp"
-        _frpc_path = None
-        _candidates = (
-            ["frpc.exe", "frpc_windows_amd64.exe", "frpc_windows_386.exe"]
-            if platform.system() == "Windows"
-            else ["frpc", "frpc_linux_amd64", "frpc_linux_arm64"]
-        )
-        for _name in _candidates:
-            _test = _cwd / _name
-            if _test.exists():
-                _frpc_path = str(_test)
-                break
-        # Fallback: any frpc* binary in cwd
-        if _frpc_path is None:
-            _wild = sorted(_cwd.glob("frpc*"))
-            if _wild:
-                _frpc_path = str(_wild[0])
-        # Last resort: try PATH
-        if _frpc_path is None:
-            _frpc_path = "frpc.exe" if platform.system() == "Windows" else "frpc"
 
         tunnel_manager = FrpClient(cfg, logger=logger, frp_binary=_frpc_path)
         logger.info(f"使用 frpc: {_frpc_path}")
@@ -399,13 +403,12 @@ def main() -> None:
         else:
             logger.info(f"隧道管理器已初始化: {cfg.tunnel.server_addr}:{cfg.tunnel.server_port}")
         # frpc is NOT auto-started — user controls it from the admin panel
-
-        # Check if frpc binary actually exists (PATH fallback means nothing in frp/)
-        _bare_fallback = "frpc.exe" if platform.system() == "Windows" else "frpc"
-        if _frpc_path == _bare_fallback:
-            _print_frpc_download_guide()
     else:
         logger.info("未配置隧道服务器，跳过 frp 管理")
+
+    # Print frpc download guide if binary is missing (regardless of tunnel config)
+    if _frpc_missing:
+        _print_frpc_download_guide()
 
     # ── 8. 启动 Web 服务 ──────────────────────────────────────
     from dataclasses import asdict
