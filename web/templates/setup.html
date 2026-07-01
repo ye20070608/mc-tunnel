@@ -282,7 +282,7 @@
           <!-- Step 5: Summary -->
           <div class="setup-panel sp5 card">
             <h2>✅ 配置完成！</h2>
-            <p class="desc">所有设置已保存。点击下方按钮一键启动所有服务。</p>
+            <p class="desc">所有设置已保存。请关闭程序后重新启动以应用新配置。</p>
             <div style="background:var(--bg);border:2px solid var(--border);padding:16px;margin-bottom:16px;">
               <p style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">
                 ✓ MC 服务端: {{data.server.version}}, 端口 {{data.config.mcPort}}, 最大 {{data.config.maxPlayers}} 人<br>
@@ -298,10 +298,11 @@
               </label>
               <span style="font-size:13px;">我已阅读并同意 Mojang EULA</span>
             </div>
+            <p class="desc" style="color:var(--accent);margin-top:16px;">💡 配置已保存，请<strong>关闭程序</strong>后重新启动，使新配置生效。</p>
             <div class="setup-nav-row">
               <label class="step-link prev" for="setup-step4">← 上一步</label>
               <div class="right">
-                <button class="step-link launch" onclick="launchServer()">🚀 一键启动</button>
+                <button class="step-link launch" onclick="saveAndExit()">💾 保存配置</button>
               </div>
             </div>
           </div>
@@ -356,11 +357,11 @@ async function loadVersions() {
 document.addEventListener('DOMContentLoaded', loadVersions);
 
 /**
- * Handle the "一键启动" action from step 5.
- * Validates EULA agreement, fetches CSRF token, validates admin credentials
- * via the login API, and redirects to the dashboard.
+ * Handle the "保存配置" action from step 5.
+ * Saves the configuration and shows a restart prompt —
+ * config changes (version, JVM args, port) need a program restart.
  */
-async function launchServer() {
+async function saveAndExit() {
   const eulaCheck = document.getElementById('eula-agree');
   if (!eulaCheck.checked) {
     alert('请先阅读并同意 Mojang EULA');
@@ -466,14 +467,15 @@ async function launchServer() {
       return;
     }
 
-    // Step 4: Redirect to dashboard
-    window.location.href = '/dashboard';
+    // Step 4: Show restart prompt
+    alert('配置已保存！\n\n请关闭此程序窗口，然后重新启动 mc-tunnel.exe。\n\n新配置（版本、端口、JVM 参数等）将在重启后生效。');
+    if (launchBtn) { launchBtn.disabled = false; launchBtn.textContent = '💾 保存配置'; }
   } catch (err) {
     alert('配置过程发生网络错误: ' + (err.message || '请检查服务器连接'));
   } finally {
     if (launchBtn) {
       launchBtn.disabled = false;
-      launchBtn.textContent = '🚀 一键启动';
+      launchBtn.textContent = '💾 保存配置';
     }
   }
 }
