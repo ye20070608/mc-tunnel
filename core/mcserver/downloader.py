@@ -24,8 +24,6 @@ from loguru import logger
 
 FILL_API_BASE = "https://fill.papermc.io"
 FILL_API_PREFIX = "/v3/projects/paper"
-# BMCLAPI2 国内镜像 — 加速 PaperMC Fill v3 API 和 JAR 下载
-FILL_API_MIRROR = "https://bmclapi2.bangbang93.com/papermc"
 # User-Agent 必须标识软件 + 联系方式（Fill v3 要求）
 _USER_AGENT = "mc-tunnel/1.0 (ye20070608@126.com)"
 # BMCLAPI2 国内镜像 — 加速 Mojang 原版 JAR 下载
@@ -99,27 +97,25 @@ def _http_get(endpoint: str) -> dict | list:
     """发送 GET 请求到 PaperMC Fill v3 API，返回 JSON 数据。
 
     Fill v3 要求 User-Agent 头部标识软件名和联系方式。
-    优先使用 BMCLAPI2 国内镜像，失败时回退到 PaperMC 官方 API。
+
+    Note: BMCLAPI2 等国内镜像源目前尚未适配 Fill v3（2026-07-01 新 API），
+    待镜像支持后可在此添加镜像 URL fallback。
     """
     import urllib3
 
     path = f"{FILL_API_PREFIX}/{endpoint.lstrip('/')}" if endpoint else FILL_API_PREFIX
-    urls = [
-        f"{FILL_API_MIRROR}{path}",   # 国内镜像优先
-        f"{FILL_API_BASE}{path}",     # 官方 API 回退
-    ]
+    url = f"{FILL_API_BASE}{path}"
     headers = {"User-Agent": _USER_AGENT}
     last_error = None
-    for url in urls:
-        for verify_ssl in (False, True):  # 优先跳过 SSL（国内 CDN 证书链问题）
-            try:
-                if not verify_ssl:
-                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-                resp = requests.get(url, timeout=(10, 25), verify=verify_ssl, headers=headers)
-                resp.raise_for_status()
-                return resp.json()
-            except Exception as e:
-                last_error = e
+    for verify_ssl in (False, True):  # 优先跳过 SSL（国内 CDN 证书链问题）
+        try:
+            if not verify_ssl:
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            resp = requests.get(url, timeout=(10, 25), verify=verify_ssl, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            last_error = e
     raise RuntimeError(f"PaperMC API 请求失败: {last_error}")
 
 
@@ -789,45 +785,27 @@ def ensure_server_jar(
             )
 
     download_url = info["download_url"]
-    file_name = info.get("file_name", f"paper-{version}-{build}.jar")
 
-    # BMCLAPI2 国内镜像优先，失败回退 PaperMC 官方 CDN
-    mirror_url = (
-        f"{FILL_API_MIRROR}/paper/{info['version']}/{info['build']}/download"
-    )
-    urls_to_try = [mirror_url, download_url]
+    logger.info("  正在连接 {} ...", download_url[:60])
+    try:
+        download_jar(
+            download_url=download_url,
+            output_path=output_path,
+            expected_sha256=info["sha256"],
+            progress_callback=_progress,
+        )
+        if show_progress:
+            print()  # 换行
 
-    last_error = None
-    for url in urls_to_try:
-        logger.info("  正在连接 {} ...", url[:60])
-        try:
-            download_jar(
-                download_url=url,
-                output_path=output_path,
-                expected_sha256=info["sha256"],
-                progress_callback=_progress,
-            )
-            if show_progress:
-                print()  # 换行
-
-            # 同时创建/更新 server.jar 软链接（Windows 用副本）
-            _update_server_jar_link(output_path, Path(output_dir) / "server.jar")
-            _clear_progress_state()  # 重置计数器，准备下一阶段
-            last_error = None
-            break
-        except (requests.HTTPError, ValueError) as e:
-            last_error = e
-            if url == urls_to_try[-1]:
-                return _fallback_to_mojang("下载失败", e)
-            logger.warning("镜像下载失败，回退官方源: {}", e)
-        except Exception as e:
-            last_error = e
-            if url == urls_to_try[-1]:
-                return _fallback_to_mojang("下载失败", e)
-            logger.warning("镜像下载失败，回退官方源: {}", e)
-
-    if last_error is not None:
-        return _fallback_to_mojang("下载失败", last_error)
+        # 同时创建/更新 server.jar 软链接（Windows 用副本）
+        _update_server_jar_link(output_path, Path(output_dir) / "server.jar")
+        _clear_progress_state()  # 重置计数器，准备下一阶段
+    except (requests.HTTPError, ValueError) as e:
+        # PaperMC JAR 下载本身的 HTTP/校验错误 → Mojang fallback
+        return _fallback_to_mojang("下载失败", e)
+    except Exception as e:
+        # 网络不可达等其他异常 → Mojang fallback
+        return _fallback_to_mojang("下载失败", e)
 
     _mark_progress_done()
     return output_path.resolve()
