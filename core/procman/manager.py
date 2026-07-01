@@ -173,6 +173,12 @@ class ProcessManager:
         self._log.info("Restarting {}...", self._name)
         if not self.stop():
             return False
+        # Ensure the old stdout reader has drained the dead process's pipe
+        # before we launch a new process — otherwise _start_reader may see
+        # the old thread still alive and skip creating a reader for the new
+        # child, which fills the pipe buffer and deadlocks the process.
+        if self._reader_thread is not None and self._reader_thread.is_alive():
+            self._reader_thread.join(timeout=3.0)
         time.sleep(0.5)
         return self.start()
 
@@ -223,9 +229,16 @@ class ProcessManager:
     # ------------------------------------------------------------------
 
     def _start_reader(self) -> None:
-        """Start the background thread that reads stdout and pipes it to the logger."""
-        if self._reader_thread is not None and self._reader_thread.is_alive():
-            return
+        """Start the background thread that reads stdout and pipes it to the logger.
+
+        If a previous reader is still alive (e.g. draining the old process's
+        pipe after a restart), wait for it to finish before starting a fresh
+        one.  This prevents the new subprocess from starting without a reader,
+        which would fill the pipe buffer and deadlock the child.
+        """
+        old = self._reader_thread
+        if old is not None and old.is_alive():
+            old.join(timeout=3.0)
         self._reader_thread = threading.Thread(
             target=self._reader_loop,
             name=f"out-{self._name}",
@@ -273,9 +286,14 @@ class ProcessManager:
         return lines[-limit:]
 
     def _start_monitor(self) -> None:
-        """Start the background monitor thread for auto-restart."""
-        if self._monitor_thread is not None and self._monitor_thread.is_alive():
-            return
+        """Start the background monitor thread for auto-restart.
+
+        Joins any previous monitor thread before launching a new one so
+        that at most one monitor watches the current process at a time.
+        """
+        old = self._monitor_thread
+        if old is not None and old.is_alive():
+            old.join(timeout=3.0)
         self._monitor_thread = threading.Thread(
             target=self._monitor_loop,
             name=f"mon-{self._name}",
