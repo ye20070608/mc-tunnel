@@ -175,9 +175,13 @@ class WorldManager:
         overworld.mkdir(parents=True, exist_ok=True)
         (overworld / "session.lock").write_text("", encoding="utf-8")
 
-        # 如果指定了种子，写入 server.properties
+        # 保存种子：优先写入 server.properties，若不存在则写入 config.yaml
         if seed:
             self._set_property("level-seed", seed)
+            # 如果 server.properties 还不存在，种子会丢失 → 同步写入 config.yaml
+            props_path = self._server_dir / "server.properties"
+            if not props_path.exists():
+                self._save_to_config({"world": {"seed": seed}})
         return True
 
     def delete_world(self, name: str) -> bool:
@@ -250,24 +254,10 @@ class WorldManager:
         level_name = self._make_level_name(name)
         self._set_active_world(level_name)
 
-        # Also sync config.yaml so ServerPropertiesGenerator stays in sync
-        try:
-            import yaml
-            cm_path = Path("config/config.yaml")
-            if cm_path.exists():
-                raw = yaml.safe_load(cm_path.read_text(encoding="utf-8")) or {}
-                raw.setdefault("world", {})["level_name"] = level_name
-                # Atomic write
-                import tempfile
-                fd, tmp = tempfile.mkstemp(dir=cm_path.parent, prefix="config_", suffix=".tmp")
-                try:
-                    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                        yaml.dump(raw, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
-                    os.replace(tmp, str(cm_path))
-                except Exception:
-                    os.unlink(tmp)
-        except Exception:
-            pass
+        # If server.properties doesn't exist yet (first run), save to config.yaml
+        # so ServerPropertiesGenerator picks up the correct level-name on start.
+        if not (self._server_dir / "server.properties").exists():
+            self._save_to_config({"world": {"level_name": level_name}})
 
         return True
 
@@ -512,6 +502,39 @@ class WorldManager:
         tmp_path = Path(str(props_path) + ".tmp")
         tmp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         os.replace(str(tmp_path), str(props_path))
+
+    @staticmethod
+    def _save_to_config(updates: dict) -> None:
+        """Atomically merge *updates* into ``config/config.yaml``.
+
+        *updates* is a dict of top-level sections, each mapping to a dict
+        of key-value pairs to set/overwrite.  Existing keys not mentioned
+        in *updates* are left untouched.
+
+        Example::
+
+            _save_to_config({"world": {"seed": "12345"}})
+        """
+        import yaml
+        import tempfile
+
+        cm_path = Path("config/config.yaml")
+        try:
+            raw = yaml.safe_load(cm_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            return
+
+        for section, kv in updates.items():
+            raw.setdefault(section, {}).update(kv)
+
+        try:
+            fd, tmp = tempfile.mkstemp(dir=cm_path.parent, prefix="config_", suffix=".tmp")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                yaml.dump(raw, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            os.replace(tmp, str(cm_path))
+        except Exception:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
 
     @staticmethod
     def _dir_size(path: Path) -> int:
