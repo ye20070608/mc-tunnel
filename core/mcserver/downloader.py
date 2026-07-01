@@ -99,7 +99,8 @@ def _http_get(endpoint: str) -> dict | list:
     """
     import urllib3
 
-    url = f"{FILL_API_BASE}{FILL_API_PREFIX}/{endpoint.lstrip('/')}"
+    path = f"{FILL_API_PREFIX}/{endpoint.lstrip('/')}" if endpoint else FILL_API_PREFIX
+    url = f"{FILL_API_BASE}{path}"
     headers = {"User-Agent": _USER_AGENT}
     last_error = None
     for verify_ssl in (False, True):  # 优先跳过 SSL（国内 CDN 证书链问题）
