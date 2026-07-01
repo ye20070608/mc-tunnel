@@ -185,6 +185,27 @@ def _interactive_select_version() -> str:
     return versions[0]
 
 
+def _print_frpc_download_guide() -> None:
+    """Print frpc download guide to console (before web server starts)."""
+    print()
+    print("=" * 55)
+    print("  ⚠️  未检测到 frpc 程序！")
+    print("=" * 55)
+    print()
+    print("  frpc 是 frp 内网穿透的客户端程序，需要下载后放入")
+    print("  项目根目录下的 frp\\ 文件夹中：")
+    print()
+    print("  📥 标准 frpc (GitHub):")
+    print("     https://github.com/fatedier/frp/releases")
+    print()
+    print("  🌸 樱花 frpc:")
+    print("     https://www.natfrp.com/")
+    print()
+    print("  下载后将 frpc.exe 放入 frp\\ 目录后重新启动。")
+    print("=" * 55)
+    print()
+
+
 def main() -> None:
     """主入口。"""
     args = _parse_args()
@@ -378,6 +399,11 @@ def main() -> None:
         else:
             logger.info(f"隧道管理器已初始化: {cfg.tunnel.server_addr}:{cfg.tunnel.server_port}")
         # frpc is NOT auto-started — user controls it from the admin panel
+
+        # Check if frpc binary actually exists (PATH fallback means nothing in frp/)
+        _bare_fallback = "frpc.exe" if platform.system() == "Windows" else "frpc"
+        if _frpc_path == _bare_fallback:
+            _print_frpc_download_guide()
     else:
         logger.info("未配置隧道服务器，跳过 frp 管理")
 
