@@ -226,6 +226,23 @@
                 </tr>
               </tbody>
             </table>
+
+            <!-- frpc download guidance -->
+            <div id="frpc-download-guide" style="margin-top:16px;padding:14px;background:var(--warn-bg);border:2px solid var(--warn-border);border-radius:8px;display:none;">
+              <p style="margin:0 0 8px;font-weight:600;">⚠️ 未检测到 frpc 程序</p>
+              <p style="font-size:12px;margin:0 0 10px;color:var(--muted);">
+                frpc 是 frp 穿透的客户端程序，需要下载后放入项目根目录下的 <code>frp/</code> 文件夹中。
+              </p>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <a href="https://github.com/fatedier/frp/releases" target="_blank" class="btn btn-secondary btn-sm">📥 下载标准 frpc (GitHub)</a>
+                <a href="https://www.natfrp.com/" target="_blank" class="btn btn-secondary btn-sm">🌸 下载樱花 frpc</a>
+              </div>
+              <p style="font-size:11px;margin:8px 0 0;color:var(--muted);">
+                下载后将 <code>frpc.exe</code>（Windows）或 <code>frpc</code>（Linux）放入 <code>frp\</code> 目录，然后刷新此页面。
+              </p>
+              <p style="font-size:10px;margin:4px 0 0;color:var(--danger);" id="frpc-recheck-msg"></p>
+            </div>
+
             <div class="setup-nav-row">
               <label class="step-link prev" for="setup-step2">← 上一步</label>
               <div class="right">

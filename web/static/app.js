@@ -458,6 +458,36 @@ function updateFrpcButtons(status) {
   } else if (msg && !connected) {
     msg.textContent = '';
   }
+  // Re-check frpc status whenever tunnel status updates
+  if (!connected) checkFrpcStatus();
+}
+
+function checkFrpcStatus() {
+  fetch('/api/tunnel/frpc-check')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.success) return;
+      var found = d.data.found;
+
+      // Admin panel hint
+      var hint = document.getElementById('frpc-download-hint');
+      if (hint) hint.style.display = found ? 'none' : '';
+
+      // Setup wizard guide
+      var guide = document.getElementById('frpc-download-guide');
+      if (guide) guide.style.display = found ? 'none' : '';
+
+      // Hide frpc start button if binary missing
+      var btnStart = document.getElementById('btn-frp-start');
+      if (btnStart && !found) btnStart.style.display = 'none';
+
+      // Recheck message in setup wizard
+      var recheck = document.getElementById('frpc-recheck-msg');
+      if (recheck && !found) {
+        recheck.textContent = '已检测: frpc 未找到。请下载后放入 frp\\ 目录。';
+      }
+    })
+    .catch(function() { /* ignore — tunnel API not available */ });
 }
 
 function _ensureTable(parentSelector, columns) {

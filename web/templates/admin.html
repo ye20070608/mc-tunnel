@@ -139,6 +139,21 @@
           <button class="btn btn-danger" id="btn-frp-stop" onclick="frpcStop()" style="display:none;">⏹ 停止穿透</button>
           <span id="frpc-action-msg" style="font-size:11px;color:var(--muted);align-self:center;"></span>
         </div>
+
+        <!-- frpc download guidance -->
+        <div id="frpc-download-hint" style="display:none;margin-top:12px;padding:12px;background:var(--warn-bg);border:2px solid var(--warn-border);border-radius:8px;">
+          <p style="margin:0 0 6px;font-weight:600;font-size:13px;">⚠️ 未检测到 frpc 程序，穿透功能无法使用</p>
+          <p style="font-size:12px;margin:0 0 8px;color:var(--muted);">
+            请下载 frpc 并放入项目根目录下的 <code>frp/</code> 文件夹：
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="https://github.com/fatedier/frp/releases" target="_blank" class="btn btn-secondary btn-sm">📥 标准 frpc (GitHub)</a>
+            <a href="https://www.natfrp.com/" target="_blank" class="btn btn-secondary btn-sm">🌸 樱花 frpc</a>
+          </div>
+          <p style="font-size:11px;margin:6px 0 0;color:var(--muted);">
+            放入后<a href="javascript:checkFrpcStatus()" style="color:var(--primary);">点击刷新检测</a>
+          </p>
+        </div>
       </div>
 
       <!-- ============================================================
