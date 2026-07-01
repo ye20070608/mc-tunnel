@@ -24,6 +24,8 @@ from loguru import logger
 
 FILL_API_BASE = "https://fill.papermc.io"
 FILL_API_PREFIX = "/v3/projects/paper"
+# BMCLAPI2 国内镜像 — 加速 PaperMC Fill v3 API 和 JAR 下载
+FILL_API_MIRROR = "https://bmclapi2.bangbang93.com/papermc"
 # User-Agent 必须标识软件 + 联系方式（Fill v3 要求）
 _USER_AGENT = "mc-tunnel/1.0 (ye20070608@126.com)"
 # BMCLAPI2 国内镜像 — 加速 Mojang 原版 JAR 下载
@@ -33,6 +35,10 @@ _MOJANG_MIRROR_MAP = {
     "https://launchermeta.mojang.com": "https://bmclapi2.bangbang93.com",
     "https://piston-meta.mojang.com": "https://bmclapi2.bangbang93.com",
     "https://launcher.mojang.com": "https://bmclapi2.bangbang93.com",
+}
+# 将 PaperMC Fill Data CDN URL 映射到 BMCLAPI2 镜像
+_FILL_DATA_MIRROR_MAP = {
+    "https://fill-data.papermc.io": FILL_API_MIRROR,
 }
 
 # ---------------------------------------------------------------------------
@@ -92,26 +98,39 @@ def _mark_progress_error() -> None:
         _download_progress["phase"] = ""
 
 
+def _rewrite_fill_url(url: str) -> str:
+    """将 PaperMC Fill Data CDN URL 改写为 BMCLAPI2 国内镜像。"""
+    for official, mirror in _FILL_DATA_MIRROR_MAP.items():
+        if url.startswith(official):
+            return url.replace(official, mirror)
+    return url
+
+
 def _http_get(endpoint: str) -> dict | list:
     """发送 GET 请求到 PaperMC Fill v3 API，返回 JSON 数据。
 
     Fill v3 要求 User-Agent 头部标识软件名和联系方式。
+    优先使用 BMCLAPI2 国内镜像，失败时回退到 PaperMC 官方 API。
     """
     import urllib3
 
     path = f"{FILL_API_PREFIX}/{endpoint.lstrip('/')}" if endpoint else FILL_API_PREFIX
-    url = f"{FILL_API_BASE}{path}"
+    urls = [
+        f"{FILL_API_MIRROR}{path}",   # 国内镜像优先
+        f"{FILL_API_BASE}{path}",     # 官方 API 回退
+    ]
     headers = {"User-Agent": _USER_AGENT}
     last_error = None
-    for verify_ssl in (False, True):  # 优先跳过 SSL（国内 CDN 证书链问题）
-        try:
-            if not verify_ssl:
-                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            resp = requests.get(url, timeout=(10, 25), verify=verify_ssl, headers=headers)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            last_error = e
+    for url in urls:
+        for verify_ssl in (False, True):  # 优先跳过 SSL（国内 CDN 证书链问题）
+            try:
+                if not verify_ssl:
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                resp = requests.get(url, timeout=(10, 25), verify=verify_ssl, headers=headers)
+                resp.raise_for_status()
+                return resp.json()
+            except Exception as e:
+                last_error = e
     raise RuntimeError(f"PaperMC API 请求失败: {last_error}")
 
 
@@ -482,7 +501,17 @@ def _ensure_mojang_jar(
     logger.info(f"获取 Mojang {version} 服务端下载链接...")
     info = _get_mojang_server_info(version)
 
-    if not info.get("url"):
+    # 构建下载 URL 列表：BMCLAPI2 国内镜像优先，Mojang 官方回退
+    mojang_urls: list[str] = []
+    # BMCLAPI2 直链 — 对中国大陆用户速度远优于 Mojang 官方 CDN
+    mojang_urls.append(f"https://bmclapi2.bangbang93.com/version/{version}/server")
+    if info.get("url"):
+        # 官方 URL 作为兜底（镜像不可达时回退）
+        official_url = info["url"]
+        if official_url not in mojang_urls:
+            mojang_urls.append(official_url)
+
+    if not mojang_urls:
         logger.warning(f"Mojang {version} 没有服务端 JAR 下载链接，跳过预下载")
         return None
 
@@ -507,28 +536,35 @@ def _ensure_mojang_jar(
                 version, downloaded_mb, total_mb, pct,
             )
 
-    try:
-        download_jar(
-            download_url=info["url"],
-            output_path=version_path,
-            expected_sha256="",  # Mojang 用 SHA1 而非 SHA256
-            progress_callback=_mojang_progress,
-            verify=True,  # Always try SSL first per request
-        )
-        if show_progress:
-            print()  # 换行
-        _clear_progress_state()
-        # 确保 Paperclip 能在 cache/ 找到（cwd=server/）
-        _ensure_cache_copy(version_path, cache_path)
-        logger.info(f"Mojang 原版 JAR 已缓存: {jar_name}")
-    except Exception as exc:
-        _clear_progress_state()
-        logger.warning(f"Mojang 原版 JAR 下载失败（Paperclip 将尝试自行下载）: {exc}")
-        if version_path.exists():
-            version_path.unlink()
-        return None
+    last_error = None
+    for url in mojang_urls:
+        try:
+            download_jar(
+                download_url=url,
+                output_path=version_path,
+                expected_sha256="",  # Mojang 用 SHA1 而非 SHA256
+                progress_callback=_mojang_progress,
+                verify=True,  # Always try SSL first per request
+            )
+            if show_progress:
+                print()  # 换行
+            _clear_progress_state()
+            # 确保 Paperclip 能在 cache/ 找到（cwd=server/）
+            _ensure_cache_copy(version_path, cache_path)
+            logger.info(f"Mojang 原版 JAR 已缓存: {jar_name}")
+            return version_path
+        except Exception as exc:
+            last_error = exc
+            if url == mojang_urls[-1]:
+                # 最后一个 URL 也失败了
+                break
+            logger.warning("镜像下载失败，回退 Mojang 官方源: {}", exc)
 
-    return version_path
+    _clear_progress_state()
+    logger.warning(f"Mojang 原版 JAR 下载失败（Paperclip 将尝试自行下载）: {last_error}")
+    if version_path.exists():
+        version_path.unlink()
+    return None
 
 
 def _ensure_cache_copy(src: Path, dst: Path) -> None:
@@ -763,26 +799,45 @@ def ensure_server_jar(
                 info["version"], downloaded_mb, total_mb, pct,
             )
 
-    logger.info("  正在连接 {} ...", info["download_url"][:60])
-    try:
-        download_jar(
-            download_url=info["download_url"],
-            output_path=output_path,
-            expected_sha256=info["sha256"],
-            progress_callback=_progress,
-        )
-        if show_progress:
-            print()  # 换行
+    download_url = info["download_url"]
+    mirror_url = _rewrite_fill_url(download_url)
 
-        # 同时创建/更新 server.jar 软链接（Windows 用副本）
-        _update_server_jar_link(output_path, Path(output_dir) / "server.jar")
-        _clear_progress_state()  # 重置计数器，准备下一阶段
-    except (requests.HTTPError, ValueError) as e:
-        # PaperMC JAR 下载本身的 HTTP/校验错误 → Mojang fallback
-        return _fallback_to_mojang("下载失败", e)
-    except Exception as e:
-        # 网络不可达等其他异常 → Mojang fallback
-        return _fallback_to_mojang("下载失败", e)
+    # 镜像优先，失败回退官方 CDN
+    urls_to_try = [mirror_url] if mirror_url != download_url else []
+    urls_to_try.append(download_url)
+
+    last_error = None
+    for url in urls_to_try:
+        logger.info("  正在连接 {} ...", url[:60])
+        try:
+            download_jar(
+                download_url=url,
+                output_path=output_path,
+                expected_sha256=info["sha256"],
+                progress_callback=_progress,
+            )
+            if show_progress:
+                print()  # 换行
+
+            # 同时创建/更新 server.jar 软链接（Windows 用副本）
+            _update_server_jar_link(output_path, Path(output_dir) / "server.jar")
+            _clear_progress_state()  # 重置计数器，准备下一阶段
+            last_error = None
+            break
+        except (requests.HTTPError, ValueError) as e:
+            last_error = e
+            if url == urls_to_try[-1]:
+                # 最后一个 URL 也失败了 → Mojang fallback
+                return _fallback_to_mojang("下载失败", e)
+            logger.warning("镜像下载失败，回退官方源: {}", e)
+        except Exception as e:
+            last_error = e
+            if url == urls_to_try[-1]:
+                return _fallback_to_mojang("下载失败", e)
+            logger.warning("镜像下载失败，回退官方源: {}", e)
+
+    if last_error is not None:
+        return _fallback_to_mojang("下载失败", last_error)
 
     _mark_progress_done()
     return output_path.resolve()
