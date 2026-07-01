@@ -637,14 +637,15 @@ class MCServerAdapter:
     def get_installed_versions(self) -> list[dict]:
         """Return a list of installed PaperMC JAR versions.
 
-        Scans ``server/versions/*/`` for ``paper-*.jar`` files and
-        extracts version and build numbers.  Also scans the legacy
+        Scans ``server/versions/*/`` for ``paper-*.jar`` and ``mojang_*.jar``
+        files and extracts version and build numbers.  Also scans the legacy
         flat ``server/`` layout for backward compatibility.
 
         Returns:
             List of dicts with ``version``, ``build``, ``file_name``,
             ``size_mb``, ``active``.
         """
+        import re
         from pathlib import Path
 
         jars: list[dict] = []
@@ -652,16 +653,30 @@ class MCServerAdapter:
 
         def _collect(jar_path: Path) -> None:
             name = jar_path.name
-            stem = name.replace(".jar", "")
-            parts = stem.split("-")
-            version = parts[1] if len(parts) > 1 else "unknown"
-            build_str = parts[2] if len(parts) > 2 else "0"
-            try:
-                build = int(build_str)
-            except ValueError:
-                build = 0
             size_mb = round(jar_path.stat().st_size / (1024 * 1024), 1)
-            # 同版本保留最高 build 号（有 build 号的 PaperMC 下载优先于无 build 的 Paperclip 产物）
+            version = "unknown"
+            build = 0
+            build_str = "0"
+
+            # paper-{version}-{build}.jar (e.g. paper-1.20.1-196.jar)
+            if name.startswith("paper-"):
+                stem = name.replace(".jar", "")
+                parts = stem.split("-")
+                version = parts[1] if len(parts) > 1 else "unknown"
+                build_str = parts[2] if len(parts) > 2 else "0"
+                try:
+                    build = int(build_str)
+                except ValueError:
+                    build = 0
+            # mojang_{version}.jar (e.g. mojang_1.20.1.jar)
+            elif name.startswith("mojang_"):
+                stem = name.replace(".jar", "")
+                # mojang_1.20.1 → version=1.20.1
+                version = stem.replace("mojang_", "")
+                if version.startswith("_"):
+                    version = version[1:]
+                build_str = "0"
+
             if version not in seen or build > seen[version]["_build_num"]:
                 seen[version] = {
                     "version": version,
@@ -676,9 +691,13 @@ class MCServerAdapter:
         if versions_root.exists():
             for jar_path in sorted(versions_root.glob("*/paper-*.jar"), reverse=True):
                 _collect(jar_path)
+            for jar_path in sorted(versions_root.glob("*/mojang_*.jar"), reverse=True):
+                _collect(jar_path)
 
         # Legacy: flat server/ directory
         for jar_path in sorted(Path.cwd().joinpath("server").glob("paper-*.jar"), reverse=True):
+            _collect(jar_path)
+        for jar_path in sorted(Path.cwd().joinpath("server").glob("mojang_*.jar"), reverse=True):
             _collect(jar_path)
 
         for entry in seen.values():
