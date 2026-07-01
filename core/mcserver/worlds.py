@@ -254,10 +254,9 @@ class WorldManager:
         level_name = self._make_level_name(name)
         self._set_active_world(level_name)
 
-        # If server.properties doesn't exist yet (first run), save to config.yaml
-        # so ServerPropertiesGenerator picks up the correct level-name on start.
-        if not (self._server_dir / "server.properties").exists():
-            self._save_to_config({"world": {"level_name": level_name}})
+        # Always sync to config.yaml — ServerPropertiesGenerator reads from
+        # config when regenerating server.properties, so it must stay in sync.
+        self._save_to_config({"world": {"level_name": level_name}})
 
         return True
 
