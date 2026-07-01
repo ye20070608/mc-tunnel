@@ -786,26 +786,46 @@ def ensure_server_jar(
 
     download_url = info["download_url"]
 
-    logger.info("  正在连接 {} ...", download_url[:60])
-    try:
-        download_jar(
-            download_url=download_url,
-            output_path=output_path,
-            expected_sha256=info["sha256"],
-            progress_callback=_progress,
-        )
-        if show_progress:
-            print()  # 换行
+    # BMCLAPI2 缓存了 PaperMC v2 时代的 JAR 文件 — 优先命中缓存
+    # （速度快于 Fill v3 的 fill-data.papermc.io CDN，尤其在国内）
+    cache_url = (
+        f"https://bmclapi2.bangbang93.com/paper/api/v2/projects/paper"
+        f"/versions/{info['version']}/builds/{info['build']}"
+        f"/downloads/{info['file_name']}"
+    )
+    urls = [cache_url, download_url]
 
-        # 同时创建/更新 server.jar 软链接（Windows 用副本）
-        _update_server_jar_link(output_path, Path(output_dir) / "server.jar")
-        _clear_progress_state()  # 重置计数器，准备下一阶段
-    except (requests.HTTPError, ValueError) as e:
-        # PaperMC JAR 下载本身的 HTTP/校验错误 → Mojang fallback
-        return _fallback_to_mojang("下载失败", e)
-    except Exception as e:
-        # 网络不可达等其他异常 → Mojang fallback
-        return _fallback_to_mojang("下载失败", e)
+    last_error = None
+    for url in urls:
+        logger.info("  正在连接 {} ...", url[:60])
+        try:
+            download_jar(
+                download_url=url,
+                output_path=output_path,
+                expected_sha256=info["sha256"],
+                progress_callback=_progress,
+            )
+            if show_progress:
+                print()  # 换行
+
+            # 同时创建/更新 server.jar 软链接（Windows 用副本）
+            _update_server_jar_link(output_path, Path(output_dir) / "server.jar")
+            _clear_progress_state()
+            last_error = None
+            break
+        except (requests.HTTPError, ValueError) as e:
+            last_error = e
+            if url == urls[-1]:
+                return _fallback_to_mojang("下载失败", e)
+            logger.warning("BMCLAPI2 缓存未命中，回退官方 CDN: {}", e)
+        except Exception as e:
+            last_error = e
+            if url == urls[-1]:
+                return _fallback_to_mojang("下载失败", e)
+            logger.warning("BMCLAPI2 缓存未命中，回退官方 CDN: {}", e)
+
+    if last_error is not None:
+        return _fallback_to_mojang("下载失败", last_error)
 
     _mark_progress_done()
     return output_path.resolve()
