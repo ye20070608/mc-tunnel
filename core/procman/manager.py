@@ -83,6 +83,17 @@ class ProcessManager:
     # Public API
     # ------------------------------------------------------------------
 
+    def request_stop(self) -> None:
+        """Mark that a graceful stop was requested externally.
+
+        Call this *before* triggering a shutdown via an out-of-band
+        mechanism (e.g. RCON ``/stop``).  It tells the auto-restart
+        monitor that the impending exit is intentional, preventing a
+        false-positive "unexpected crash" restart.
+        """
+        with self._lock:
+            self._stop_requested = True
+
     def start(self) -> bool:
         """Start the subprocess.
 
