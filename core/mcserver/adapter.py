@@ -245,6 +245,11 @@ class MCServerAdapter:
         if not self._process.is_running():
             return True
 
+        # Tell the process manager that we're intentionally stopping the
+        # server so the auto-restart monitor does not mistake the RCON
+        # shutdown for an unexpected crash.
+        self._process.request_stop()
+
         # Try graceful shutdown via RCON
         try:
             self._rcon_command("say Server is shutting down...")
