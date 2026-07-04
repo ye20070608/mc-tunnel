@@ -45,6 +45,11 @@ class MCServerAdapter:
             # when the stdout pipe is full (e.g. reader thread died).
             # Discard = drop messages instead of blocking the caller.
             "-Dlog4j2.AsyncQueueFullPolicy=Discard",
+            # Prevent PaperMC from outputting ANSI color codes when
+            # stdout is a pipe (Jansi terminal detection produces
+            # escape sequences that corrupt regex-based player
+            # join/leave detection in _on_server_output).
+            "-Dlog4j.skipJansi=true",
             *jvm_parts,
             "-jar", paper_jar, "nogui",
         ]
@@ -346,13 +351,25 @@ class MCServerAdapter:
         with self._cache_lock:
             return list(self._cache_players)
 
+    # ANSI escape sequence regex — compiled once at module level would
+    # create a circular-import hazard (adapter imports from procman which
+    # is where the canonical _ANSI_RE lives).  A local compile is cheap
+    # enough for the rate this method is called (one call per stdout line).
+    _ansi_re = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
     def _on_server_output(self, line: str) -> None:
         """Detect player join/leave/rejection events from server console output."""
         import re
         now = datetime.now()
 
+        # Strip ANSI escape codes before regex matching — PaperMC with
+        # Jansi enabled prefixes player join/leave messages with codes
+        # like \x1b[93m which causes \w to greedily consume the trailing
+        # digits, corrupting the captured player name (e.g. "93mArchetto").
+        line = self._ansi_re.sub("", line)
+
         # "Archetto joined the game"
-        m = re.search(r"(\w{2,16}) joined the game", line)
+        m = re.search(r"([a-zA-Z0-9_]{2,16}) joined the game", line)
         if m:
             name = m.group(1)
             self._player_join_times[name] = now
@@ -369,7 +386,7 @@ class MCServerAdapter:
             return
 
         # "Archetto left the game"
-        m = re.search(r"(\w{2,16}) left the game", line)
+        m = re.search(r"([a-zA-Z0-9_]{2,16}) left the game", line)
         if m:
             name = m.group(1)
             self._player_join_times.pop(name, None)
@@ -383,7 +400,7 @@ class MCServerAdapter:
             return
 
         # "Steve[/192.168.1.5:54321] logged in with entity id ..."
-        m = re.search(r"(\w{2,16})\[/([\d.]+):\d+\] logged in", line)
+        m = re.search(r"([a-zA-Z0-9_]{2,16})\[/([\d.]+):\d+\] logged in", line)
         if m:
             name = m.group(1)
             ip = m.group(2)
@@ -393,7 +410,7 @@ class MCServerAdapter:
         # Whitelist rejection: "You are not whitelisted on this server!"
         if "not whitelisted" in line.lower() or "not whitelisted" in line:
             # Try to extract player name from GameProfile or fallback
-            name_m = re.search(r"name=(\w{2,16})", line)
+            name_m = re.search(r"name=([a-zA-Z0-9_]{2,16})", line)
             ip_m = re.search(r"\(/([\d.]+):\d+\)", line)
             if name_m:
                 pending_name = name_m.group(1)
@@ -665,6 +682,10 @@ class MCServerAdapter:
             line = line.strip("\r")
             if not line:
                 continue
+            # Strip ANSI escape codes before log-pattern matching so that
+            # lines prefixed with e.g. \x1b[93m are still parsed as proper
+            # log entries rather than being treated as continuation lines.
+            line = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", line)
             m = _LOG_RE.match(line)
             if m:
                 entries.append({
@@ -836,6 +857,7 @@ class MCServerAdapter:
             "-Dsun.stdout.encoding=UTF-8",
             "-Dsun.stderr.encoding=UTF-8",
             "-Dlog4j2.AsyncQueueFullPolicy=Discard",
+            "-Dlog4j.skipJansi=true",
             *jvm_parts,
             "-jar", new_jar, "nogui",
         ]
