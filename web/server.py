@@ -303,7 +303,44 @@ def _run_cheroot(app: Flask, port: int, ssl_context, scheme: str, logger) -> Non
     SSL is handled natively via ``BuiltinSSLAdapter`` when *ssl_context*
     is a ``(cert_path, key_path)`` tuple.
     """
+    import logging
+
     from cheroot.wsgi import Server as WSGIServer
+
+    # ── Suppress cheroot SSL noise ────────────────────────────────
+    # Self-signed certs trigger a cheroot error_log entry for every
+    # browser that rejects the certificate during TLS handshake,
+    # flooding the console with "peer dropped the TLS connection"
+    # and SSLEOFError tracebacks.
+    #
+    # Bridge cheroot's Python logging to Loguru so we can filter.
+    class _CherootLogHandler(logging.Handler):
+        _SSL_NOISE = (
+            "peer dropped the TLS connection",
+            "SSLEOFError",
+            "sslv3 alert certificate unknown",
+        )
+
+        def emit(self, record: logging.LogRecord) -> None:
+            msg = self.format(record)
+            if any(phrase in msg for phrase in self._SSL_NOISE):
+                return  # suppress
+            # Route through Loguru
+            try:
+                _level = record.levelname.lower()
+                logger.opt(depth=6, exception=record.exc_info).log(
+                    "WARNING" if _level == "warning" else _level.upper(),
+                    "cheroot: {}",
+                    msg,
+                )
+            except Exception:
+                pass
+
+    _ch_logger = logging.getLogger("cheroot")
+    _ch_logger.propagate = False
+    _ch_logger.handlers.clear()
+    _ch_logger.addHandler(_CherootLogHandler())
+    _ch_logger.setLevel(logging.WARNING)
 
     bind_addr = ("127.0.0.1", port)
     server = WSGIServer(bind_addr, app, numthreads=8, timeout=30)

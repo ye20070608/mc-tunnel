@@ -41,6 +41,10 @@ class MCServerAdapter:
             "-Dfile.encoding=UTF-8",        # Force UTF-8 for file I/O (log4j, etc.)
             "-Dsun.stdout.encoding=UTF-8",  # Force UTF-8 for console output (JDK <18)
             "-Dsun.stderr.encoding=UTF-8",
+            # Prevent log4j2 async queue from blocking game threads
+            # when the stdout pipe is full (e.g. reader thread died).
+            # Discard = drop messages instead of blocking the caller.
+            "-Dlog4j2.AsyncQueueFullPolicy=Discard",
             *jvm_parts,
             "-jar", paper_jar, "nogui",
         ]
@@ -114,11 +118,37 @@ class MCServerAdapter:
         """Signal the cache poller to stop."""
         self._cache_running = False
 
+    def _check_reader_health(self) -> None:
+        """Detect and recover a dead stdout reader thread.
+
+        If the MC server process is running but the reader thread that
+        drains its stdout pipe has died, the pipe buffer will eventually
+        fill up and block the JVM's logging subsystem.  This watchdog
+        restarts the reader before the cascade occurs.
+        """
+        proc_mgr = self._process
+        if not proc_mgr.is_running():
+            return
+        reader = proc_mgr._reader_thread
+        if reader is None or not reader.is_alive():
+            self._log.error(
+                "stdout reader thread is DEAD but MC server PID {} is "
+                "still running — restarting reader to prevent pipe stall",
+                proc_mgr.get_pid(),
+            )
+            try:
+                proc_mgr._start_reader()
+            except Exception as exc:
+                self._log.error(
+                    "failed to restart reader thread: {}", exc
+                )
+
     def _cache_poller(self) -> None:
         """Background loop: poll MC server every 3 s, update cache."""
         while self._cache_running:
             try:
                 self._refresh_cache()
+                self._check_reader_health()
             except Exception:
                 pass  # keep last-known-good values
             time.sleep(3)
@@ -805,6 +835,7 @@ class MCServerAdapter:
             "-Dfile.encoding=UTF-8",
             "-Dsun.stdout.encoding=UTF-8",
             "-Dsun.stderr.encoding=UTF-8",
+            "-Dlog4j2.AsyncQueueFullPolicy=Discard",
             *jvm_parts,
             "-jar", new_jar, "nogui",
         ]

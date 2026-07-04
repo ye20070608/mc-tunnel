@@ -258,30 +258,65 @@ class ProcessManager:
         self._reader_thread.start()
 
     def _reader_loop(self) -> None:
-        """Read process stdout line-by-line and forward to the logger."""
+        """Read process stdout line-by-line and forward to the logger.
+
+        Runs until the subprocess stdout pipe is closed (EOF) or an
+        unrecoverable error occurs.  All exceptions are caught and logged
+        so a single malformed line or transient I/O error cannot kill the
+        reader thread silently.
+        """
         proc = self._process
         if proc is None or proc.stdout is None:
             return
 
         try:
-            for line in iter(proc.stdout.readline, ""):
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    # EOF on the pipe — if the process is still alive this
+                    # is anomalous (pipe broken / stdout handle closed).
+                    if proc.poll() is None:
+                        self._log.error(
+                            "{} stdout pipe closed unexpectedly "
+                            "(process PID {} still running)",
+                            self._name,
+                            proc.pid,
+                        )
+                    break
+
                 text = line.rstrip("\n\r")
-                if text:
+                if not text:
+                    continue
+
+                # Log the raw line — protect the reader thread against
+                # Loguru failures (disk full, permission change, etc.).
+                try:
                     self._log.info("[{}] {}", self._name, text)
-                    # Append to ring buffer (thread-safe)
-                    # Filter internal RCON connection noise — these are
-                    # implementation details, not game content.
-                    if not _is_internal_line(text):
-                        with self._buffer_lock:
-                            self._console_buffer.append(text)
-                    if self._stdout_callback:
-                        try:
-                            self._stdout_callback(text)
-                        except Exception:
-                            pass
-        except ValueError:
-            # stdout closed
-            pass
+                except Exception:
+                    pass
+
+                # Append to ring buffer (thread-safe).
+                # Filter internal RCON connection noise — these are
+                # implementation details, not game content.
+                if not _is_internal_line(text):
+                    with self._buffer_lock:
+                        self._console_buffer.append(text)
+
+                if self._stdout_callback:
+                    try:
+                        self._stdout_callback(text)
+                    except Exception:
+                        pass
+        except Exception:
+            import traceback
+            try:
+                self._log.error(
+                    "{} reader loop crashed:\n{}",
+                    self._name,
+                    traceback.format_exc(),
+                )
+            except Exception:
+                pass
 
     def get_console_buffer(self, limit: int = 100) -> list[str]:
         """Return recent lines from the console ring buffer.
