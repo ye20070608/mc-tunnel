@@ -226,6 +226,34 @@ def create_admin_app(
     Returns:
         Configured Flask application with all routes registered.
     """
+    # --- Persist crypto keys on first run ---
+    # jwt_secret and secret_key are generated randomly the first time
+    # the app starts and persisted to config.yaml so they survive
+    # restarts.  Without this, every restart creates new keys and
+    # invalidates all existing JWT/CSRF tokens.
+    web_cfg = config.setdefault("web", {})
+    keys_to_persist: dict[str, str] = {}
+
+    if not web_cfg.get("jwt_secret"):
+        jwt_secret = os.urandom(32).hex()
+        web_cfg["jwt_secret"] = jwt_secret
+        keys_to_persist["jwt_secret"] = jwt_secret
+
+    if not web_cfg.get("secret_key"):
+        secret_key = os.urandom(24).hex()
+        web_cfg["secret_key"] = secret_key
+        keys_to_persist["secret_key"] = secret_key
+
+    if keys_to_persist and config_manager is not None:
+        try:
+            config_manager.set_web_keys(**keys_to_persist)
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "Failed to persist web crypto keys to config: {} — "
+                "keys will be regenerated on next restart",
+                exc,
+            )
+
     app = create_app(config, logger, bundle_dir=bundle_dir)
 
     # --- Register all admin API blueprints (includes public_bp) ---

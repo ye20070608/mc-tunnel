@@ -44,6 +44,8 @@ class WebConfig:
     ssl_enabled: bool = True
     ssl_cert: str = "config/certs/cert.pem"
     ssl_key: str = "config/certs/key.pem"
+    jwt_secret: str = ""              # JWT 签名密钥（留空则首次运行时自动生成并持久化）
+    secret_key: str = ""              # Flask session / CSRF 密钥（留空则首次运行时自动生成并持久化）
 
 
 @dataclass
@@ -159,6 +161,8 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
         ssl_enabled=web_data.get("ssl_enabled", True),
         ssl_cert=web_data.get("ssl_cert", "config/certs/cert.pem"),
         ssl_key=web_data.get("ssl_key", "config/certs/key.pem"),
+        jwt_secret=web_data.get("jwt_secret", ""),
+        secret_key=web_data.get("secret_key", ""),
     )
 
     admins = [
@@ -340,6 +344,50 @@ class ConfigManager:
             config_path: Path to the application config file.
         """
         self.config_path = Path(config_path)
+
+    def set_web_keys(
+        self, jwt_secret: str | None = None, secret_key: str | None = None
+    ) -> bool:
+        """Persist auto-generated web crypto keys to the config file.
+
+        Uses a temp-file + ``os.replace()`` pattern for atomic writes.
+        Only writes non-empty values — existing config values are
+        preserved when a parameter is omitted or empty.
+
+        Args:
+            jwt_secret: JWT signing key to persist (only if non-empty).
+            secret_key: Flask session / CSRF key to persist (only if non-empty).
+
+        Returns:
+            True on success.
+        """
+        import os
+        import tempfile
+
+        with open(self.config_path, "r", encoding="utf-8") as fh:
+            config: dict[str, Any] = yaml.safe_load(fh) or {}
+
+        web: dict[str, Any] = config.setdefault("web", {})
+        if jwt_secret:
+            web["jwt_secret"] = jwt_secret
+        if secret_key:
+            web["secret_key"] = secret_key
+
+        config_dir = os.path.dirname(self.config_path) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".yaml")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                yaml.dump(
+                    config, fh, default_flow_style=False,
+                    allow_unicode=True, sort_keys=False,
+                )
+            os.replace(tmp_path, self.config_path)
+            logger.info("Web crypto keys persisted to {}", self.config_path)
+        except Exception:
+            os.unlink(tmp_path)
+            raise
+
+        return True
 
     def update_admin_password(self, username: str, new_hash: str) -> bool:
         """Update an admin account's password hash in the config file.

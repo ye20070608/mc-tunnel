@@ -22,6 +22,8 @@ web:
   ssl_enabled: true                 # 启用 HTTPS（自动生成自签名证书）
   ssl_cert: "config/certs/cert.pem" # SSL 证书路径
   ssl_key: "config/certs/key.pem"   # SSL 私钥路径
+  jwt_secret: ""                    # JWT 签名密钥（留空则首次运行时自动生成 256-bit 随机密钥）
+  secret_key: ""                    # Flask session / CSRF 密钥（留空则首次运行时自动生成 192-bit 随机密钥）
 
 # 管理员账号（首次运行引导创建，BCrypt 哈希）
 admins:

@@ -116,7 +116,7 @@ class MCStatusCollector:
         try:
             from mcipc.rcon import Client
 
-            with Client(self._host, self._rcon_port) as client:
+            with Client(self._host, self._rcon_port, timeout=3.0) as client:
                 client.login(self._rcon_password)
 
                 # TPS
