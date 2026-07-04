@@ -9,6 +9,12 @@ import time
 from pathlib import Path
 from typing import Callable
 
+# Regex for ANSI escape sequences (CSI codes like \x1b[93m, \x1b[0m).
+# PaperMC outputs these to colorize player join/leave messages when
+# Jansi is active.  Stripped early so they do not corrupt regex-based
+# player-name detection in stdout callbacks.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
 # Patterns for internal/non-game console lines that should be hidden
 # from the user-facing console view.
 _INTERNAL_PATTERNS = [
@@ -285,6 +291,14 @@ class ProcessManager:
                     break
 
                 text = line.rstrip("\n\r")
+                if not text:
+                    continue
+
+                # Strip ANSI escape sequences before downstream
+                # processing so that PaperMC/Jansi color codes
+                # (e.g. \x1b[93m) do not corrupt regex-based
+                # player-name detection or display as garbage.
+                text = _ANSI_RE.sub("", text)
                 if not text:
                     continue
 
