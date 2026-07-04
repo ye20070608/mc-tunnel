@@ -32,7 +32,11 @@ class WhitelistManager:
         self._adapter = adapter
         self._meta_path = Path("server/whitelist_meta.json")
         self._whitelist_path = Path("server/whitelist.json")
-        self._meta_lock = threading.Lock()
+        # RLock (reentrant) is required because record_last_online()
+        # acquires _meta_lock and then calls _read_meta() which also
+        # acquires _meta_lock.  A plain Lock() would deadlock because
+        # it is not reentrant on the same thread.
+        self._meta_lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Public API — CRUD
