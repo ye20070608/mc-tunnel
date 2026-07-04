@@ -169,6 +169,9 @@ class MockConfigManager:
     def update_admin_password(self, username, password_hash):
         return True
 
+    def set_web_keys(self, jwt_secret=None, secret_key=None):
+        return True
+
 
 class MockAuditLogger:
     def __init__(self):
