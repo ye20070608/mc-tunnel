@@ -1,5 +1,29 @@
 # Changelog
 
+## [v1.1.0] - 2026-07-05
+
+### Fixed (2026-07-05)
+- **Reader 线程死锁（根因修复）**：`WhitelistManager._meta_lock` 非重入锁 → `RLock`。`record_last_online()` 获取锁后调用 `_read_meta()` 再次获取同一把锁导致死锁，reader 线程在玩家加入时永久阻塞，控制台冻结 + 看门狗误判 `is_alive()=True` 不重启（whitelist.py + manager.py）
+- **Reader 线程 ANSI 转义码污染**：PaperMC stdout 输出 `\x1b[93m` 等颜色码，`\w{2,16}` 贪婪匹配前缀数字导致玩家名捕获为 `93mArchetto`。修复：JVM 源头 `-Dlog4j.skipJansi=true` + reader 行级 ANSI 剥离 + `_on_server_output` 正则收紧 `[a-zA-Z0-9_]` + `_parse_console_lines` ANSI 剥离（adapter.py + manager.py）
+- **Reader 线程静默死亡**：`except ValueError` 太窄，回调中未受保护的异常穿透后 daemon 线程死亡 → stdout 管道缓冲区填满 → log4j2 队列堆积 → 游戏主线程阻塞。修复：`except Exception` + 外层 `while True` 兜底重启 + `_check_reader_health()` 看门狗 + JVM `AsyncQueueFullPolicy=Discard`（adapter.py + manager.py）
+- **RCON 连接无超时**：`mcipc.rcon.Client` 增加 `timeout=3.0`，防止 RCON 挂起阻塞 API worker 线程（adapter.py）
+- **JWT/secret_key 不持久化**：首次启动随机生成后写入 `config.yaml`，重启不丢 key，已有 JWT/CSRF token 不失效（web/server.py + config/loader.py）
+- **RCON stop 竞态**：`stop()` 前先调 `request_stop()` 通知 procman，避免 RCON `/stop` 触发的退出被自动重启误判为崩溃（adapter.py + manager.py）
+- **cheroot SSL 噪音抑制**：`_CherootLogHandler` 过滤自签名证书握手错误（`SSLEOFError`、`peer dropped TLS`），不再刷屏控制台（web/server.py）
+- **Reader 重启竞态**：`restart()` 时 join 旧 reader 线程（3s 超时），避免新进程无 reader 导致管道堵死（manager.py）
+- **Fill v3 API 适配**：PaperMC API v2 于 2026-07-01 关闭（410 Gone），迁移至 Fill v3，修复 URL 拼接空 endpoint 尾部斜杠导致 404（downloader.py）
+
+### Added (2026-07-05)
+- **BMCLAPI2 v2 缓存端点**：PaperMC JAR 下载优先命中 `bmclapi2.bangbang93.com/paper/api/v2/projects/paper/...`，绕过 Fill v3 镜像未适配的限制。Mojang 原版 JAR 也通过 BMCLAPI2 加速（downloader.py）
+- **后台缓存轮询器**：`_cache_poller` 每 3s 通过 RCON + Server List Ping 采集状态/玩家/控制台，API 从缓存零延迟读取，不再阻塞前端请求（adapter.py）
+
+### Changed (2026-07-05)
+- **配置向导保存即建目录**：最后一步保存配置后立即 `mkdir` 世界目录，不等 PaperMC 首次启动（adapter.py）
+- **BMCLAPI2 镜像清理**：移除无效的 Fill v3 镜像尝试和 fill-data URL 改写（downloader.py）
+- **下载容错增强**：PaperMC API 优先跳过 SSL 验证（国内 CDN 证书链问题）→ 失败回退 Mojang 原版 JAR（BMCLAPI2 镜像加速）→ Mojang 预下载回到后台线程不阻塞启动（downloader.py）
+
+---
+
 ## [v1.0.0] - 2026-06-30
 
 ### Added (2026-06-30)

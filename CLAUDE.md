@@ -42,6 +42,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 当前焦点：阶段 7 文档与打包。
 
+近期关键修复（v1.1.0, 2026-07-05）：
+- **Reader 死锁**：`WhitelistManager._meta_lock` `Lock()`→`RLock()`（非重入锁死锁，玩家加入时 reader 线程永久阻塞）
+- **ANSI 转义码**：JVM `-Dlog4j.skipJansi=true` + reader 行级剥离（颜色码污染正则，玩家名检测失效）
+- **Reader 线程加固**：外层 `while True` 兜底重启 + `_check_reader_health()` 看门狗 + 日志 I/O 独立 try/except
+- **后台缓存架构**：`_cache_poller` 每 3s 轮询 RCON/Server List Ping，API 从缓存零延迟读取（不再每请求阻塞 RCON）
+- **JVM 级联阻塞防护**：`-Dlog4j2.AsyncQueueFullPolicy=Discard` 兜底，管道堵死不阻塞游戏主线程
+
 ### 多版本共存（v2.0 核心特性）
 
 PaperMC 服务端按版本隔离存储：`server/versions/{version}/`。`downloader.py` 的 `switch_version()` 切换版本时自动清理旧 Paper 配置（`paper-world-defaults.yml` 等），避免跨版本格式不兼容崩溃。`_find_jar()` 返回绝对路径，防止 Java cwd 与项目根不同导致路径双重嵌套。

@@ -271,7 +271,86 @@ python -c "from mcstatus import JavaServer; s=JavaServer('127.0.0.1', 25565); pr
 
 ---
 
-## 八、参考资源
+## 八、国内下载镜像（2026-07 更新）
+
+### 8.1 可用镜像站
+
+| 镜像 | 地址 | 状态 |
+|------|------|------|
+| **BMCLAPI2** | `bmclapi2.bangbang93.com` | ✅ 可用，流量压力大（MCBBS 关站后峰值突破 10Gbps） |
+| **OpenBMCLAPI** | 分布式节点网络 | ✅ 社区节点分担，[Dashboard](https://bd.bangbang93.com/pages/dashboard) |
+| **CERNET 高校镜像** | `mirrors.cernet.edu.cn/list/bmclapi` | ✅ 7所高校反向代理 |
+| **MCBBS 镜像** | — | ❌ 已随 MCBBS 永久关闭 |
+
+### 8.2 本项目镜像策略
+
+| 资源类型 | 优先 | 回退 |
+|---------|------|------|
+| Mojang 原版 JAR | BMCLAPI2 镜像 | Mojang 官方 CDN |
+| PaperMC JAR (v2 缓存) | BMCLAPI2 v2 缓存端点 | PaperMC 官方 CloudFlare CDN |
+| PaperMC API (Fill v3) | 仅官方（镜像未适配 Fill v3） | — |
+
+BMCLAPI2 由 @bangbang93 个人维护，爱发电支持：https://afdian.com/a/bangbang93。
+
+---
+
+## 九、ANSI/Jansi 与 stdout 管道（2026-07 新增）
+
+### 9.1 问题
+
+PaperMC 使用 Log4j2 + Jansi 进行终端彩色输出。当 stdout 重定向到管道（而非 TTY）时，
+Jansi 可能仍输出 ANSI CSI 转义码（如 `\x1b[93m` = 黄色），这些二进制序列会：
+
+1. 污染正则表达式匹配（`\w` 匹配数字 `9`、`3` 等，导致玩家名捕获为 `93mArchetto`）
+2. 破坏日志解析器的行首锚点 `^`
+3. 在前端显示为乱码
+
+### 9.2 解决
+
+- **源头抑制**：JVM 参数 `-Dlog4j.skipJansi=true`，从日志框架层面禁用颜色输出
+- **防御层**：Python reader 线程行级 ANSI 剥离（`_ANSI_RE.sub("", text)`）
+- **正则收紧**：`\w{2,16}` → `[a-zA-Z0-9_]{2,16}`（等效 `re.ASCII` 模式）
+
+### 9.3 相关日志系统参数
+
+| JVM 参数 | 作用 |
+|---------|------|
+| `-Dlog4j.skipJansi=true` | 禁用 Jansi 颜色（源头抑制 ANSI） |
+| `-Dlog4j2.AsyncQueueFullPolicy=Discard` | 异步队列满时丢弃而非阻塞调用者（防管道堵塞级联到游戏主线程） |
+| `-Dfile.encoding=UTF-8` | 文件 I/O 编码 |
+| `-Dsun.stdout.encoding=UTF-8` | 控制台输出编码（JDK < 18） |
+
+---
+
+## 十、后台缓存架构（2026-07 新增）
+
+### 10.1 问题
+
+原始设计中，前端 API（`/api/mc/status`、`/api/mc/players` 等）直接调用 RCON 查询 MC 服务器。
+RCON 每次查询需要 TCP 连接→登录→命令→响应（~100-500ms），多个前端轮询请求并发时导致
+请求线程堆积，管理后台响应缓慢。
+
+### 10.2 解决
+
+`MCServerAdapter` 内部维护后台缓存线程（`_cache_poller`，daemon），每 3 秒执行一次
+`_refresh_cache()`：
+
+1. Server List Ping → 获取 MOTD、在线人数、版本
+2. RCON `list` → 获取在线玩家列表
+3. RCON `data get entity` → 获取玩家坐标/世界（节流 5s）
+4. `get_console_buffer()` → 获取控制台最近 200 行
+
+API 端点从 `_cache_status` / `_cache_players` / `_cache_console` 直接读取，
+零延迟返回最后已知值。RCON 或 Ping 失败时保留上一次有效数据，不抛异常。
+
+### 10.3 Reader 健康检查
+
+缓存轮询器每次循环还调用 `_check_reader_health()`：检测 stdout reader 线程是否存活，
+如已死亡则自动重启（`_start_reader()`），防止管道缓冲区填满导致级联阻塞。
+
+---
+
+## 十一、参考资源
 
 - [PaperMC 官方文档](https://docs.papermc.io/)
 - [Minecraft RCON 协议规范](https://wiki.vg/RCON)
