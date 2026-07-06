@@ -68,8 +68,9 @@ frp/*.key
 /frp-*.key
 
 # 运行时生成
-config/config.yaml              # 用户本地配置
+config/config.yaml              # 用户本地配置（含密码/令牌，绝不可提交）
 config/certs/                   # 自签名 SSL 证书（首次启动自动生成）
+server/crash-reports/           # MC 崩溃报告（含系统指纹信息）
 logs/
 
 # OS

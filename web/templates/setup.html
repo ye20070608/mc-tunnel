@@ -201,7 +201,7 @@
             <div style="margin-top:16px;padding:12px;background:var(--bg);border:2px dashed var(--border);border-radius:8px;">
               <p style="font-size:12px;margin:0 0 8px;">📋 粘贴 frpc 配置自动填充（支持标准 frp / 樱花 Frp）</p>
               <textarea id="frp-paste" class="input" style="height:120px;font-family:var(--font-mono);font-size:10px;resize:vertical;"
-                placeholder="粘贴 frpc.ini 或 frpc.toml 内容，点击&#34;解析配置&#34;自动填充所有字段。&#10;例如：&#10;[common]&#10;server_addr = frp-way.com&#10;server_port = 8088&#10;user = vyaogqjrr72yky0wbd8f8mpg2f3v7eni&#10;&#10;[mc]&#10;type = tcp&#10;local_port = 25565&#10;remote_port = 35374&#10;auth_pass = 123"></textarea>
+                placeholder="粘贴 frpc.ini 或 frpc.toml 内容，点击&#34;解析配置&#34;自动填充所有字段。&#10;例如：&#10;[common]&#10;server_addr = frp.example.com&#10;server_port = 7000&#10;user = 你的樱花用户ID&#10;&#10;[mc]&#10;type = tcp&#10;local_port = 25565&#10;remote_port = 12345&#10;auth_pass = 你的认证密码"></textarea>
               <button class="btn btn-secondary btn-sm" type="button" onclick="parseFrpConfig()" style="margin-top:6px;">🔍 解析配置</button>
               <span id="frp-parse-msg" style="font-size:10px;color:var(--success);margin-left:8px;display:none;"></span>
             </div>

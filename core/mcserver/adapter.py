@@ -249,9 +249,8 @@ class MCServerAdapter:
                 server_port=self._config.mc.port,
             )
             self._log.info(
-                "server.properties created (RCON port={}, password={})",
+                "server.properties created (RCON port={}, password=****)",
                 self._rcon_port,
-                self._rcon_password[:4] + "****",
             )
         else:
             # Existing server.properties — patch RCON settings if missing/broken
