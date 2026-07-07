@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from loguru import logger
+
 
 class MCStatusCollector:
     """Collects server status via Server List Ping and optionally via RCON.
@@ -122,9 +124,19 @@ class MCStatusCollector:
                 # TPS
                 try:
                     tps_raw = client.run("tps")
-                    status["tps"] = self._parse_tps(str(tps_raw or ""))
+                    raw_text = str(tps_raw or "")
+                    tps_value = self._parse_tps(raw_text)
+                    status["tps"] = tps_value
+
+                    # Warn on suspicious values so the admin can see the
+                    # actual RCON response format for debugging.
+                    if tps_value <= 0.0 or tps_value > 20.0:
+                        logger.warning(
+                            "Suspicious TPS value {:.1f} from /tps RCON. "
+                            "Raw output: {}", tps_value, raw_text
+                        )
                 except Exception:
-                    pass
+                    logger.debug("Failed to query / parse TPS via RCON", exc_info=True)
 
                 # Uptime (via /forge tps or we approximate from list response)
                 try:
@@ -132,7 +144,7 @@ class MCStatusCollector:
                 except Exception:
                     pass
         except Exception:
-            pass
+            logger.debug("RCON connection / login failed for status query", exc_info=True)
 
     def _try_process_info(self, status: dict[str, Any]) -> None:
         """Attempt to enrich *status* with process-level metrics via psutil.
@@ -190,18 +202,44 @@ class MCStatusCollector:
     def _parse_tps(output: str) -> float:
         """Extract a TPS value from the raw output of the ``/tps`` command.
 
+        Handles Minecraft colour-code-prefixed lines (``§6TPS…``) and
+        timestamp/noise prefixes such as ``[22:15:30]`` by looking for
+        number sequences on lines that mention ``tps`` first, falling
+        back to the first number on any line.
+
         Args:
-            output: Raw server response.
+            output: Raw server response (may include ``§`` colour codes).
 
         Returns:
             Parsed TPS value, or 0.0 on failure.
         """
-        # Paper format: "Overall TPS: 20.0, ..." or similar
+        # ── First pass: lines explicitly mentioning "tps" ──────────
         for line in output.splitlines():
-            match = re.search(r"[\d.]+", line)
-            if match:
+            # Look for the "tps" keyword followed (eventually) by a
+            # colon, then extract the first number after that colon.
+            # This handles colour codes (``§6TPS…: §a20.0``), timestamp
+            # prefixes (``[22:15:30] TPS …: 20.0``), and multi-colon
+            # lines (``Overall TPS: 20.0, Mean: 19.5``).
+            if "tps" not in line.lower():
+                continue
+            tps_match = re.search(
+                r"tps[^:]*?:\s*[^\d]*(\d+(?:\.\d+)?)",
+                line,
+                re.IGNORECASE,
+            )
+            if tps_match:
                 try:
-                    return float(match.group())
+                    return float(tps_match.group(1))
                 except ValueError:
                     pass
+
+        # ── Second pass: fallback — first number on any line ──────
+        for line in output.splitlines():
+            match = re.search(r"(\d+(?:\.\d+)?)", line)
+            if match:
+                try:
+                    return float(match.group(1))
+                except ValueError:
+                    pass
+
         return 0.0
